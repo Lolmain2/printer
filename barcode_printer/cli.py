@@ -197,21 +197,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    interactive = False
+    interactive = not argv or (len(argv) == 1 and not argv[0].startswith("-"))
 
-    if not argv:
-        interactive = True
-        rc = run_interactive()
-    elif len(argv) == 1 and not argv[0].startswith("-"):
-        # Someone dragged a file straight onto the exe: argv[0] is the order file.
-        interactive = True
-        rc = run_interactive(order_hint=argv[0])
-    else:
-        args = build_arg_parser().parse_args(argv)
-        rc = run(order=args.order, labels=args.labels, printer=args.printer, cache=args.cache, dry_run=args.dry_run)
+    rc = 1
+    try:
+        if not argv:
+            rc = run_interactive()
+        elif len(argv) == 1 and not argv[0].startswith("-"):
+            # Someone dragged a file straight onto the exe: argv[0] is the order file.
+            rc = run_interactive(order_hint=argv[0])
+        else:
+            args = build_arg_parser().parse_args(argv)
+            rc = run(
+                order=args.order,
+                labels=args.labels,
+                printer=args.printer,
+                cache=args.cache,
+                dry_run=args.dry_run,
+            )
+    except Exception:
+        # Never let the window vanish on a crash: print the full error so it
+        # can be read (and reported) instead of the console just closing.
+        import traceback
 
-    if interactive and getattr(sys, "frozen", False):
-        _prompt("\nPress Enter to exit...")
+        traceback.print_exc()
+        rc = 1
+    finally:
+        if interactive and getattr(sys, "frozen", False):
+            _prompt("\nPress Enter to exit...")
 
     return rc
 

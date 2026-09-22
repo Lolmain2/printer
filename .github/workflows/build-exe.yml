@@ -21,11 +21,29 @@ jobs:
           pip install pyinstaller
 
       - name: Build exe
+        shell: pwsh
         run: |
+          # pywin32's COM support (pythoncomXX.dll / pywintypesXX.dll) lives
+          # outside the normal package tree and PyInstaller's import scan
+          # doesn't pick it up on its own; without it Excel COM automation
+          # fails at runtime with a DLL/import error right when printing
+          # starts. Bundle those DLLs explicitly.
+          $sitePkg = python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+          $pywinSys32 = Join-Path $sitePkg "pywin32_system32"
+          $addBinaryArgs = @()
+          foreach ($dll in Get-ChildItem -Path $pywinSys32 -Filter "*.dll") {
+            $addBinaryArgs += "--add-binary"
+            $addBinaryArgs += "$($dll.FullName);."
+          }
+
           pyinstaller --onefile --console --name BarcodePrinter `
             --collect-all pyzbar `
             --collect-all openpyxl `
             --hidden-import win32timezone `
+            --hidden-import win32com.client `
+            --hidden-import pythoncom `
+            --hidden-import pywintypes `
+            @addBinaryArgs `
             print_order.py
 
       - name: Upload build artifact
