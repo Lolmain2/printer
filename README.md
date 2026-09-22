@@ -36,6 +36,32 @@ pip install -r requirements.txt
 
 ## Usage
 
+### The easy way: `BarcodePrinter.exe`
+
+Download `BarcodePrinter.exe` (built by the `Build Windows exe` GitHub
+Action — grab it from the repo's Actions run artifacts, or from a
+Release once one is tagged) and put it anywhere on your work PC —
+next to the `Naljepnice_*.xlsx` label files is a natural spot.
+
+Then either:
+
+- **Double-click it.** It will ask, in the console window that opens,
+  for the order file (drag the order PDF/xlsx onto the console window
+  and press Enter — Windows types its full path for you) and the
+  folder containing the label workbooks. It remembers the label folder
+  and printer choice for next time, so after the first run you can just
+  press Enter to reuse them. It always shows a dry-run preview first
+  and asks `Actually print the above now? (y/n)` before sending
+  anything to the printer.
+- **Drag an order file onto `BarcodePrinter.exe`** in Explorer. It
+  skips the "which order file" question and goes straight to asking
+  for the labels folder (or reuses the one from last time).
+
+Its settings (last-used labels folder and printer name) are stored in
+`%APPDATA%\BarcodePrinter\config.json`.
+
+### The command-line way: `python print_order.py` / `BarcodePrinter.exe`
+
 Preview what would be printed, without printing anything:
 
 ```
@@ -57,7 +83,8 @@ python print_order.py --order "C:\Orders\26-0200-001305.pdf" ^
 
 `--printer` is optional; omit it to use the Windows default printer.
 Run `python -c "from barcode_printer.printer import list_printers; print(list_printers())"`
-to see the exact names Windows knows your printers by.
+to see the exact names Windows knows your printers by. The exe accepts
+the exact same flags (`BarcodePrinter.exe --order ... --labels ...`).
 
 ## Testing
 
