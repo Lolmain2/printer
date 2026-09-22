@@ -6,12 +6,39 @@ can still be exercised (and tested) on other platforms.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, TypeVar
+
+T = TypeVar("T")
+
+# Transient "Excel is still busy" COM errors. These happen a lot when
+# automating Office right after opening a big workbook (these label
+# workbooks embed thousands of barcode images) — the call arrives before
+# Excel has fully settled and gets bounced instead of queued, so the fix
+# is to just retry with backoff rather than treat it as a real failure.
+_RPC_E_CALL_REJECTED = -2147418111
+_RPC_E_SERVERCALL_RETRYLATER = -2147417846
+_TRANSIENT_COM_ERRORS = {_RPC_E_CALL_REJECTED, _RPC_E_SERVERCALL_RETRYLATER}
 
 
 class PrintError(RuntimeError):
     """Raised when Excel/COM printing fails, with context about what was being printed."""
+
+
+def _retry_transient_com_errors(action: Callable[[], T], attempts: int = 20, delay: float = 0.5) -> T:
+    import pywintypes
+
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            return action()
+        except pywintypes.com_error as exc:
+            if exc.args[0] not in _TRANSIENT_COM_ERRORS:
+                raise
+            last_exc = exc
+            time.sleep(delay)
+    raise last_exc
 
 
 class PrintSession:
@@ -67,7 +94,9 @@ class PrintSession:
         resolved = str(Path(path).resolve())
         if resolved not in self._workbooks:
             try:
-                self._workbooks[resolved] = self._app.Workbooks.Open(resolved, ReadOnly=True)
+                self._workbooks[resolved] = _retry_transient_com_errors(
+                    lambda: self._app.Workbooks.Open(resolved, ReadOnly=True)
+                )
             except Exception as exc:
                 raise PrintError(f"Could not open label workbook '{resolved}': {exc}") from exc
         return self._workbooks[resolved]
@@ -77,16 +106,16 @@ class PrintSession:
             return
         wb = self._get_workbook(workbook_path)
         try:
-            sheet = wb.Sheets(sheet_name)
+            sheet = _retry_transient_com_errors(lambda: wb.Sheets(sheet_name))
         except Exception as exc:
             raise PrintError(
-                f"Sheet '{sheet_name}' was not found in '{workbook_path}': {exc}"
+                f"Could not access sheet '{sheet_name}' in '{workbook_path}': {exc}"
             ) from exc
         kwargs = {"Copies": copies}
         if self.printer_name:
             kwargs["ActivePrinter"] = self.printer_name
         try:
-            sheet.PrintOut(**kwargs)
+            _retry_transient_com_errors(lambda: sheet.PrintOut(**kwargs))
         except Exception as exc:
             raise PrintError(
                 f"Printing sheet '{sheet_name}' from '{workbook_path}' failed: {exc}. "
