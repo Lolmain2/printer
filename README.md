@@ -1,99 +1,99 @@
-# Barcode Order Label Printer
+# Scream Coach: vocal warm-ups up to extreme vocals
 
-Reads a customer order (PDF or Excel), matches each ordered product's
-barcode against the "Naljepnice" label workbooks, and prints the right
-number of label sheets — each printed sheet holds 65 stickers, so the
-number of sheets printed per product is `ceil(quantity / 65)`.
+A small offline web app that walks you through a proper vocal warm-up, then
+step by step toward vocal fry, fry screams, false cord screams, highs and lows.
+The curriculum and safety rules are based on the research in
+[RESEARCH.md](RESEARCH.md).
+
+## Desktop app (Windows .exe)
+
+`ScreamCoach.exe` is a single portable file. There's nothing to install, just
+double-click it.
+
+**Getting the exe:** GitHub builds it on every push (or click **Run
+workflow** on the Actions page to build it on demand). Open the repo's **Actions** tab, then the latest **Build Scream Coach
+exe** run, and download **ScreamCoach-windows-exe** under *Artifacts*. It comes
+as a zip, so unzip it to get `ScreamCoach.exe`. Pushing a tag such as
+`coach-v1.0.0` also attaches the exe to a GitHub Release.
+
+**First launch:**
+- The exe isn't code-signed, so Windows SmartScreen may say "Windows protected
+  your PC". Click **More info → Run anyway**.
+- It takes a few seconds to open because the portable exe unpacks itself
+  first.
+- For the pitch check, Windows has to allow desktop apps to use the mic:
+  **Settings → Privacy & security → Microphone → Let desktop apps access your
+  microphone**.
+
+Progress is saved in `%APPDATA%\Scream Coach`, so it survives moving or
+replacing the exe.
+
+**Building it yourself** (Node 22):
+
+```
+npm install
+npm start        # run the desktop app
+npm test         # unit tests
+npm run dist     # build dist/ScreamCoach.exe (works on Windows and Linux)
+```
+
+## Running in a browser
+
+No install or build step. Open `index.html` in a browser (double-click it),
+or serve the folder and open it on your phone:
+
+```
+python -m http.server 8000
+# then open http://<your-computer's-ip>:8000 on your phone
+```
+
+Progress is saved in the browser (localStorage) on that device.
+
+**Microphone / pitch check:** browsers only allow the mic on `https://` pages,
+`localhost`, or a file opened directly on a computer. Opening the
+`http://<ip>:8000` address on your phone works for everything else, but the
+pitch check will be greyed out. To use it on a phone, host the folder on
+something with HTTPS (for example GitHub Pages).
 
 ## How it works
 
-1. **Order document** (`--order`): a `.pdf` order (like `26-0200-001305...pdf`)
-   or an `.xlsx` order list. The order number is recognized by the
-   pattern `YY-0200-NNNNNN` / `YY-0202-NNNNNN`. Each order line is read
-   for its barcode and quantity.
-2. **Label workbooks** (`--labels`): one or more `.xlsx` files (or a
-   directory of them), each with one sheet per product. Every sheet is
-   a 5x13 grid (65 cells) of the same barcode image — the actual
-   barcode value is read straight out of that image (via `pyzbar`), so
-   no manual barcode-to-sheet mapping has to be maintained.
-3. For every order line whose barcode is found in a label workbook, that
-   product's sheet is sent to the printer `ceil(quantity / 65)` times.
-   Lines with no matching label are listed at the end instead of being
-   silently skipped.
+- **Practice tab:** today's session with one Start button, and your path
+  through the stages. Click any unlocked stage to practise it instead.
+- **Every session:** warm-up (body release, support breath, lip trills, straw
+  sirens, humming), then the technique block for your stage, then a cool-down.
+- **7 stages:** clean fry → retraction (the "silent laugh") → inhale fry → fry
+  screams → false cord screams → highs & pitch control → lows & gutturals.
+  Each one unlocks after 3–4 sessions at the previous stage with a healthy
+  check-in.
+- **Reference tones** play scales, sirens and drones in a low, mid or high
+  range, so you have pitches to follow.
+- **Pitch check (mic):** turn it on in a session and the app listens while you
+  sing. It shows your note next to the target note, a flat/sharp meter, and
+  "On the note ✓" when you're within 50 cents (half a semitone). The right note
+  in a different octave counts, and it allows for singing slightly behind the
+  reference. You get a per-exercise score and an overall accuracy for the
+  session, which is saved in your history. Wear headphones so the mic doesn't
+  pick up the reference tone. You can also mute the reference and keep the
+  pitch check running to test yourself. Fry and distortion have no clear
+  pitch, so the meter ignores them on purpose.
+- **Check-in after each session:** "scratchy" or "pain" pauses all distortion
+  stages until a healthy session. Pain shows rest advice, and about two weeks
+  of bad check-ins tells you to see an ENT / laryngologist.
+- **Keyboard (desktop):** Space starts or pauses, ← and → move between
+  exercises, and Esc quits the session.
+- **"My voice doesn't feel right. Stop now."** ends a session immediately and goes
+  straight to the check-in.
 
-A cache file (`.label_index_cache.json`, next to the label workbooks by
-default) avoids re-scanning every barcode image on repeat runs — a
-workbook is only re-indexed if it has changed since the last scan.
+## Files
 
-## Setup (Windows)
+| File | What |
+|---|---|
+| `curriculum.js` | All exercises and stages (edit this to change the content) |
+| `progress.js` | Unlocking, safety gating, session building (pure functions) |
+| `app.js` | UI, timer, Web Audio reference tones, mic capture |
+| `pitch.js` | Pitch detection (McLeod method) and note/target maths (pure functions) |
+| `desktop/main.js` | Electron shell for the desktop app (window, mic-only permission) |
+| `desktop/icon.png` | App icon |
+| `tests/` | Unit tests: `npm test` |
 
-Printing requires Microsoft Excel and `pywin32`, so run this on Windows,
-in a Python 3.9+ environment:
-
-```
-pip install -r requirements.txt
-```
-
-## Usage
-
-### The easy way: `BarcodePrinter.exe`
-
-Download `BarcodePrinter.exe` (built by the `Build Windows exe` GitHub
-Action — grab it from the repo's Actions run artifacts, or from a
-Release once one is tagged) and put it anywhere on your work PC —
-next to the `Naljepnice_*.xlsx` label files is a natural spot.
-
-Then either:
-
-- **Double-click it.** It will ask, in the console window that opens,
-  for the order file (drag the order PDF/xlsx onto the console window
-  and press Enter — Windows types its full path for you) and the
-  folder containing the label workbooks. It remembers the label folder
-  and printer choice for next time, so after the first run you can just
-  press Enter to reuse them. It always shows a dry-run preview first
-  and asks `Actually print the above now? (y/n)` before sending
-  anything to the printer.
-- **Drag an order file onto `BarcodePrinter.exe`** in Explorer. It
-  skips the "which order file" question and goes straight to asking
-  for the labels folder (or reuses the one from last time).
-
-Its settings (last-used labels folder and printer name) are stored in
-`%APPDATA%\BarcodePrinter\config.json`.
-
-### The command-line way: `python print_order.py` / `BarcodePrinter.exe`
-
-Preview what would be printed, without printing anything:
-
-```
-python print_order.py --order "C:\Orders\26-0200-001305.pdf" ^
-    --labels "C:\Naljepnice\Naljepnice_galanterija_-_za_komade.xlsx" ^
-              "C:\Naljepnice\Naljepnice_LIMARIJA_-_za_komade.xlsx" ^
-              "C:\Naljepnice\Naljepnice_SNjEGOBRANI_-_za_komade.xlsx" ^
-    --dry-run
-```
-
-Drop `--dry-run` to actually print. `--labels` also accepts a folder
-(every `.xlsx` file in it is indexed):
-
-```
-python print_order.py --order "C:\Orders\26-0200-001305.pdf" ^
-    --labels "C:\Naljepnice" ^
-    --printer "Zebra ZD420"
-```
-
-`--printer` is optional; omit it to use the Windows default printer.
-Run `python -c "from barcode_printer.printer import list_printers; print(list_printers())"`
-to see the exact names Windows knows your printers by. The exe accepts
-the exact same flags (`BarcodePrinter.exe --order ... --labels ...`).
-
-## Testing
-
-```
-pip install pytest python-barcode
-pytest
-```
-
-The test suite covers order parsing (PDF-text and Excel), the
-quantity → sheet-count rounding, and barcode-image indexing — it does
-not exercise the actual Windows printing step, which needs a real Excel
-+ printer to verify.
+This is a practice aid, not a substitute for a voice teacher.

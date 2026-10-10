@@ -1,4 +1,4 @@
-// Run with: node --test vocal_warmup/tests/*.test.js
+// Run with: npm test
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const C = require("../curriculum.js");
