@@ -9,13 +9,16 @@
   // ---- Persistence -------------------------------------------------------
 
   function loadState() {
+    let s = P.defaultState();
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return { ...P.defaultState(), ...JSON.parse(raw) };
+      if (raw) s = { ...s, ...JSON.parse(raw) };
     } catch (e) {
       /* storage unavailable or corrupt: start fresh */
     }
-    return P.defaultState();
+    // Shallow merge isn't enough for the nested pitch-training state.
+    s.pitch = window.PitchTrainer.normalizePitchState(s.pitch);
+    return s;
   }
 
   function saveState() {
@@ -28,155 +31,8 @@
 
   let state = loadState();
 
-  // ---- Reference tones ---------------------------------------------------
-
-  const Tones = {
-    ctx: null,
-    timers: [],
-    nodes: [],
-    targets: [], // what the singer should be on, for the pitch check
-    muted: false, // reference tones can be silenced while targets keep running
-
-    ensureCtx() {
-      if (!this.ctx) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return null;
-        this.ctx = new AC();
-      }
-      if (this.ctx.state === "suspended") this.ctx.resume();
-      return this.ctx;
-    },
-
-    // One note (or siren, with endFreq) with a short attack/release so it
-    // doesn't click. `targetEnd` lets a target outlast the sound (drones).
-    voice(startFreq, at, dur, endFreq, targetEnd) {
-      this.targets.push({ start: at, end: targetEnd || at + dur, from: startFreq, to: endFreq });
-      const ctx = this.ctx;
-      this.targets = this.targets.filter((s) => s.end > ctx.currentTime - 1);
-      if (this.muted) return;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(startFreq, at);
-      if (endFreq) {
-        osc.frequency.exponentialRampToValueAtTime(endFreq, at + dur / 2);
-        osc.frequency.exponentialRampToValueAtTime(startFreq, at + dur);
-      }
-      gain.gain.setValueAtTime(0, at);
-      gain.gain.linearRampToValueAtTime(0.18, at + 0.04);
-      gain.gain.setValueAtTime(0.18, at + Math.max(0.05, dur - 0.08));
-      gain.gain.linearRampToValueAtTime(0, at + dur);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(at);
-      osc.stop(at + dur + 0.02);
-      this.nodes.push(osc);
-      osc.onended = () => {
-        this.nodes = this.nodes.filter((n) => n !== osc);
-      };
-    },
-
-    // Schedule one cycle of the pattern; returns its length in seconds.
-    scheduleCycle(pattern, baseMidi, cycle) {
-      const ctx = this.ctx;
-      const t0 = ctx.currentTime + 0.05;
-      const f = (semi) => P.midiToFreq(baseMidi + semi);
-      if (pattern.type === "scale") {
-        const step = cycle % pattern.steps;
-        const root = pattern.startOffset + step;
-        pattern.degrees.forEach((deg, i) => {
-          this.voice(f(root + deg), t0 + i * pattern.noteSec, pattern.noteSec * 0.95);
-        });
-        return pattern.degrees.length * pattern.noteSec + 1.6; // breath between reps
-      }
-      if (pattern.type === "glide") {
-        this.voice(f(pattern.fromOffset), t0, pattern.sec * 2, f(pattern.toOffset));
-        return pattern.sec * 2 + 1.2;
-      }
-      if (pattern.type === "drone") {
-        // Sound for 2.5 s, but keep it as the target until the next repeat.
-        this.voice(f(pattern.offset), t0, 2.5, null, t0 + 5);
-        return 5;
-      }
-      return 0;
-    },
-
-    start(pattern, baseMidi) {
-      this.stop();
-      if (!pattern || !this.ensureCtx()) return;
-      let cycle = 0;
-      const loop = () => {
-        const len = this.scheduleCycle(pattern, baseMidi, cycle++);
-        if (len > 0) this.timers.push(setTimeout(loop, len * 1000));
-      };
-      loop();
-    },
-
-    stop() {
-      this.timers.forEach(clearTimeout);
-      this.timers = [];
-      this.targets = [];
-      for (const n of this.nodes) {
-        try {
-          n.stop();
-        } catch (e) {
-          /* already stopped */
-        }
-      }
-      this.nodes = [];
-    },
-  };
-
-  // ---- Microphone pitch check -------------------------------------------
-
-  const Mic = {
-    stream: null,
-    source: null,
-    analyser: null,
-    buf: null,
-    interval: null,
-    recent: [], // last few detections, for a steadier display
-
-    supported() {
-      return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-    },
-
-    async open() {
-      if (this.stream) return;
-      const ctx = Tones.ensureCtx();
-      // Echo cancellation helps keep the reference tone out of the mic;
-      // noise suppression and auto gain mangle sung notes, so they're off.
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
-      });
-      this.source = ctx.createMediaStreamSource(this.stream);
-      this.analyser = ctx.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.buf = new Float32Array(this.analyser.fftSize);
-      this.source.connect(this.analyser);
-      this.recent = [];
-      this.interval = setInterval(pitchTick, 60);
-    },
-
-    close() {
-      clearInterval(this.interval);
-      this.interval = null;
-      if (this.source) this.source.disconnect();
-      if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
-      this.stream = this.source = this.analyser = null;
-    },
-
-    // Median of the last 3 detections; null as soon as the voice stops.
-    read() {
-      this.analyser.getFloatTimeDomainData(this.buf);
-      const r = window.Pitch.detectPitch(this.buf, Tones.ctx.sampleRate);
-      if (!r) {
-        this.recent = [];
-        return null;
-      }
-      this.recent = [...this.recent.slice(-2), r.freq];
-      return [...this.recent].sort((a, b) => a - b)[Math.floor(this.recent.length / 2)];
-    },
-  };
+  // Reference tones and microphone capture live in audio.js.
+  const { Tones, Mic } = window.Sound;
 
   const STATUS_TEXT = {
     on: "On the note ✓",
@@ -186,11 +42,11 @@
     sharp: "Sharp, go lower",
   };
 
-  function pitchTick() {
+  function pitchTick(frame) {
     if (!session || !Mic.analyser) return;
     const Pt = window.Pitch;
-    const freq = Mic.read();
-    const now = Tones.ctx.currentTime;
+    const freq = frame.freq;
+    const now = frame.t;
     const panel = $("pitch-panel");
     const needle = $("meter-needle");
     const status = $("pitch-status");
@@ -270,6 +126,7 @@
     }
     try {
       await Mic.open();
+      Mic.subscribe(pitchTick);
     } catch (e) {
       Mic.close();
       state.mic = false;
@@ -295,7 +152,7 @@
       if (b.dataset.view === viewId) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");
     }
-    document.body.classList.toggle("in-session", viewId === "session" || viewId === "checkin");
+    document.body.classList.toggle("in-session", ["session", "checkin", "drill"].includes(viewId));
     window.scrollTo(0, 0);
   }
 
@@ -329,8 +186,8 @@
     return selectedStage && selectedStage <= unlocked ? selectedStage : unlocked;
   }
 
-  function renderAdvice() {
-    const box = $("advice");
+  function renderAdvice(boxId = "advice") {
+    const box = $(boxId);
     box.innerHTML = "";
     for (const a of P.safetyAdvice(state)) {
       const div = el("div", `advice ${a.level}`);
@@ -463,6 +320,8 @@
   }
 
   function goView(v) {
+    if ((view === "pitch" || view === "drill") && v !== view) pitchTab.leave();
+    if (v === "pitch") pitchTab.render();
     if (v === "practice") renderPractice();
     if (v === "progress") renderProgress();
     if (v === "settings") renderSettings();
@@ -565,27 +424,11 @@
     session.remaining -= (now - session.lastTick) / 1000;
     session.lastTick = now;
     if (session.remaining <= 0) {
-      chime();
+      Tones.chime();
       goTo(session.index + 1, true);
       return;
     }
     renderTimer();
-  }
-
-  function chime() {
-    const ctx = Tones.ensureCtx();
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(1046.5, t);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.2, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-    osc.connect(g).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.65);
   }
 
   function goTo(index, keepRunning) {
@@ -648,6 +491,28 @@
     goView("practice");
   }
 
+  // ---- Pitch tab ---------------------------------------------------------
+
+  const pitchTab = window.PitchTab.create({
+    $,
+    el,
+    icon,
+    show,
+    goView,
+    getState: () => state,
+    setPitch(ps) {
+      state.pitch = ps;
+      saveState();
+    },
+    setRange(key) {
+      state.range = key;
+      saveState();
+    },
+    renderAdvice,
+    safetyAdvice: () => P.safetyAdvice(state),
+    RANGES,
+  });
+
   // ---- Wiring ------------------------------------------------------------
 
   for (const b of document.querySelectorAll(".nav-item")) {
@@ -672,8 +537,8 @@
   $("stop-btn").addEventListener("click", finishSession);
   $("quit-btn").addEventListener("click", quitSession);
   $("reset-btn").addEventListener("click", () => {
-    if (!confirm("Delete all progress and history?")) return;
-    state = P.defaultState();
+    if (!confirm("Delete all progress, history and pitch training?")) return;
+    state = { ...P.defaultState(), pitch: window.PitchTrainer.defaultPitchState() };
     selectedStage = null;
     saveState();
     renderSettings();
@@ -681,6 +546,10 @@
 
   // Keyboard: Space = start/pause, arrows = previous/next, Esc = quit.
   document.addEventListener("keydown", (e) => {
+    if (view === "drill") {
+      pitchTab.onKey(e);
+      return;
+    }
     if (view !== "session" || !session || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest && e.target.closest("input")) return;
     if (e.code === "Space") {
@@ -697,7 +566,13 @@
 
   // A focused button would also "click" on Space keyup; the handler above already did.
   document.addEventListener("keyup", (e) => {
-    if (view === "session" && e.code === "Space" && !(e.target.closest && e.target.closest("input"))) e.preventDefault();
+    const focusMode = view === "session" || view === "drill";
+    if (focusMode && e.code === "Space" && !(e.target.closest && e.target.closest("input"))) e.preventDefault();
+  });
+
+  // Hidden window: stop listening (and discard the current try) until resumed.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && (view === "drill" || view === "pitch")) pitchTab.pause();
   });
 
   goView("practice");

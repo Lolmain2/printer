@@ -140,7 +140,96 @@
     return best;
   }
 
-  const api = { detectPitch, freqToMidi, midiToFreq, noteName, compareToTarget, judge, rms, targetAt, bestMatch };
+  function median(values) {
+    if (!values.length) return null;
+    const s = [...values].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  // Median of the last 3 detections, for a steadier readout. Any gap (null)
+  // clears the history so a new note shows up immediately.
+  function smooth3(recent, freq) {
+    if (freq == null) return { recent: [], value: null };
+    const next = [...recent.slice(-2), freq];
+    return { recent: next, value: [...next].sort((a, b) => a - b)[Math.floor(next.length / 2)] };
+  }
+
+  // Error against a target note for the Pitch tab. Unlike compareToTarget this
+  // doesn't fold every octave: a singer 7 semitones sharp is told +700 ("go
+  // lower"), and only a near-octave copy of the target (within slipCents) is
+  // folded and treated as the right note in another octave.
+  function pitchError(freq, targetMidi, slipCents = 200) {
+    const sungMidi = freqToMidi(freq);
+    const rawCents = 100 * (sungMidi - targetMidi);
+    const octaves = Math.round(rawCents / 1200);
+    const folded = rawCents - 1200 * octaves;
+    const octaveSlip = octaves !== 0 && Math.abs(folded) <= slipCents;
+    return { cents: octaveSlip ? folded : rawCents, rawCents, octaves, octaveSlip, sungMidi };
+  }
+
+  // Find the steadiest stretch near `targetMidi` at the end of a recording, to
+  // play the singer's own note back to them. Returns sample indices or null.
+  function pickClip(samples, sampleRate, targetMidi, opts = {}) {
+    const { clipSec = 1.2, searchSec = 3, frame = 2048, tolCents = 60, minSec = 0.8 } = opts;
+    const from = Math.max(0, samples.length - Math.round(searchSec * sampleRate));
+    const blocks = [];
+    for (let s = from; s + frame <= samples.length; s += frame) {
+      const r = detectPitch(samples.subarray(s, s + frame), sampleRate);
+      const midi = r ? freqToMidi(r.freq) : null;
+      blocks.push({ s, midi, good: midi != null && Math.abs(100 * (midi - targetMidi)) <= tolCents });
+    }
+
+    // Longest run of good blocks; on a tie the later one wins.
+    let best = null;
+    let runStart = -1;
+    for (let i = 0; i <= blocks.length; i++) {
+      if (i < blocks.length && blocks[i].good) {
+        if (runStart < 0) runStart = i;
+        continue;
+      }
+      if (runStart >= 0) {
+        const len = i - runStart;
+        if (!best || len >= best.len) best = { from: runStart, len };
+        runStart = -1;
+      }
+    }
+    if (!best) return null;
+    const runSec = (best.len * frame) / sampleRate;
+    if (runSec < minSec) return null;
+
+    const runFrom = blocks[best.from].s;
+    const runTo = runFrom + best.len * frame;
+    const clipLen = Math.round(Math.min(clipSec, runSec) * sampleRate);
+    const start = Math.round((runFrom + runTo) / 2 - clipLen / 2);
+    const end = start + clipLen;
+    const run = blocks.slice(best.from, best.from + best.len);
+    const inClip = run.filter((b) => b.s >= start && b.s + frame <= end);
+    return { start, end, midi: median((inClip.length ? inClip : run).map((b) => b.midi)) };
+  }
+
+  // Gain that brings a clip up to a comfortable playback level.
+  function clipGain(samples, start, end, targetRms = 0.08, maxGain = 4) {
+    const r = rms(samples.subarray(start, end));
+    return r > 0 ? Math.min(maxGain, targetRms / r) : 1;
+  }
+
+  const api = {
+    detectPitch,
+    freqToMidi,
+    midiToFreq,
+    noteName,
+    compareToTarget,
+    judge,
+    rms,
+    targetAt,
+    bestMatch,
+    median,
+    smooth3,
+    pitchError,
+    pickClip,
+    clipGain,
+  };
   root.Pitch = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

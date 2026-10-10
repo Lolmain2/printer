@@ -17,6 +17,7 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
     <symbol id="i-practice" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 10.5v3M21 12h0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-pitch" viewBox="0 0 24 24"><path d="M3 9h18M3 15h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".45"/><path d="M3 17c3 0 4-10 7-10s3.5 6 6 6 3-4 5-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-progress" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L19 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-safety" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
@@ -29,6 +30,7 @@
         <span class="brand-name">Scream Coach</span>
       </div>
       <button class="nav-item" data-view="practice" type="button"><svg><use href="#i-practice"/></svg><span>Practice</span></button>
+      <button class="nav-item" data-view="pitch" type="button"><svg><use href="#i-pitch"/></svg><span>Pitch</span></button>
       <button class="nav-item" data-view="progress" type="button"><svg><use href="#i-progress"/></svg><span>Progress</span></button>
       <button class="nav-item" data-view="safety" type="button"><svg><use href="#i-safety"/></svg><span>Safety</span></button>
       <button class="nav-item" data-view="settings" type="button"><svg><use href="#i-settings"/></svg><span>Settings</span></button>
@@ -53,6 +55,115 @@
 
         <h2 class="section-title">Your path</h2>
         <ol id="path" class="path"></ol>
+      </section>
+
+      <!-- Pitch home -->
+      <section id="view-pitch" class="view" hidden>
+        <h1 class="page-title">Pitch</h1>
+        <p class="lead">Learn to hit notes: listen, then sing it back. 5–10 minutes a day.</p>
+        <div id="pitch-advice"></div>
+        <p id="pitch-error" class="notice" hidden></p>
+
+        <div class="hero">
+          <p id="ph-eyebrow" class="eyebrow"></p>
+          <h1 id="ph-title"></h1>
+          <p id="ph-text" class="hero-plan"></p>
+          <div class="hero-actions">
+            <button id="ph-start" class="btn btn-primary btn-lg" type="button">
+              <svg><use href="#i-play"/></svg><span id="ph-start-label">Start</span>
+            </button>
+            <button id="ph-explore" class="btn btn-lg" type="button">Explore my voice</button>
+            <span id="ph-length" class="muted"></span>
+          </div>
+        </div>
+
+        <div id="ph-stats" class="stats pitch-stats">
+          <div class="stat">
+            <span id="ps-home" class="stat-value">–</span>
+            <span class="stat-label">Home note</span>
+            <button id="ps-remeasure" class="link-btn" type="button" hidden>Re-measure</button>
+          </div>
+          <div class="stat">
+            <span id="ps-rate" class="stat-value">–</span>
+            <span class="stat-label">On the note, last 7 days</span>
+            <span id="ps-rate-sub" class="stat-sub"></span>
+          </div>
+          <div class="stat">
+            <span id="ps-streak" class="stat-value">0</span>
+            <span class="stat-label">Day streak</span>
+          </div>
+        </div>
+
+        <div id="ph-trend-wrap" hidden>
+          <h2 class="section-title">Last 14 days</h2>
+          <div id="ph-trend" class="trend" role="img"></div>
+          <div class="trend-axis" aria-hidden="true"><span>2 weeks ago</span><span>Today</span></div>
+          <p id="ph-lock" class="muted small"></p>
+        </div>
+
+        <h2 class="section-title">Your ladder</h2>
+        <ol id="ph-ladder" class="path"></ol>
+        <p id="ph-range-note" class="muted small"></p>
+
+        <div id="ph-notes-wrap" hidden>
+          <h2 class="section-title">Your notes</h2>
+          <div id="ph-notes" class="note-chips"></div>
+          <p class="muted small">Green: you hit it most of the time. Amber: about half. Hover a note for details.</p>
+        </div>
+
+        <div class="setting">
+          <div>
+            <h3>Reference sound</h3>
+            <p class="muted">A voice-like "oo" is easier to copy than a plain beep.</p>
+          </div>
+          <div id="ph-timbre" class="segmented" role="radiogroup" aria-label="Reference sound">
+            <button type="button" role="radio" data-timbre="voice">Voice-like</button>
+            <button type="button" role="radio" data-timbre="plain">Plain tone</button>
+          </div>
+        </div>
+        <details class="how">
+          <summary>How this works</summary>
+          <div id="ph-how"></div>
+        </details>
+        <p class="muted small">Recordings of your voice stay in memory while you train and are never saved.</p>
+      </section>
+
+      <!-- Pitch drill (focus mode: nav hidden) -->
+      <section id="view-drill" class="view drill" hidden>
+        <header class="session-bar">
+          <button id="d-exit" class="icon-btn" type="button" aria-label="Exit pitch practice" title="Exit (Esc)"><svg><use href="#i-close"/></svg></button>
+          <span id="d-label" class="section-label"></span>
+          <span id="d-count" class="muted small"></span>
+        </header>
+        <div id="d-dots" class="segments dots"></div>
+
+        <div id="d-body" class="drill-body">
+          <div class="drill-main">
+            <p id="d-instruction" class="instruction" aria-live="polite"></p>
+            <div id="d-lane" class="lane"><canvas id="d-canvas" aria-hidden="true"></canvas></div>
+          </div>
+          <div class="console drill-console">
+            <div class="pitch-row">
+              <div><span class="pitch-label">You</span><span id="d-you" class="pitch-note">–</span><span id="d-you-cents" class="readout-sub"></span></div>
+              <div><span class="pitch-label">Target</span><span id="d-target" class="pitch-note">–</span></div>
+            </div>
+            <div id="d-level" class="level-bar" hidden aria-label="Mic level"><span></span></div>
+            <div id="d-hold" class="hold-bar" hidden aria-label="Hold"><span></span></div>
+            <div id="d-panel" class="drill-panel"></div>
+            <div id="d-controls" class="drill-controls" hidden>
+              <button id="d-again" class="btn" type="button" title="Replay any time. Pitch memory fades fast. (Space)">Hear it again</button>
+              <div class="drill-row">
+                <button id="d-range" class="btn" type="button" hidden>Too high?</button>
+                <button id="d-skip" class="btn" type="button" title="Skip (S)">Skip</button>
+              </div>
+              <button id="d-pause" class="btn btn-quiet" type="button" title="Pause or resume auto-advance (P)">Pause auto-next</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="d-summary" class="summary-card" hidden></div>
+        <div id="d-overlay" class="overlay" hidden></div>
+        <div id="d-toast" class="toast" role="status" hidden></div>
       </section>
 
       <!-- Progress -->
@@ -102,7 +213,7 @@
         <div class="setting">
           <div>
             <h3>Reset progress</h3>
-            <p class="muted">Deletes your history and locks every stage again.</p>
+            <p class="muted">Deletes your history and pitch training, and locks every stage again.</p>
           </div>
           <button id="reset-btn" class="btn btn-danger" type="button">Reset</button>
         </div>
@@ -187,6 +298,9 @@
   <script src="curriculum.js"></script>
   <script src="progress.js"></script>
   <script src="pitch.js"></script>
+  <script src="pitch-trainer.js"></script>
+  <script src="audio.js"></script>
+  <script src="pitch-tab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
