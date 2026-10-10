@@ -146,3 +146,23 @@ button.link.danger { color: var(--danger); }
 .feelings button { text-align: left; }
 
 .stage button.secondary { background: var(--surface); border: 1px solid #3a3f4c; }
+
+/* Pitch check */
+.pitch { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; margin-top: 14px; }
+.pitch-row { display: flex; justify-content: space-around; text-align: center; }
+.pitch-label { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.pitch-note { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pitch[data-state="on"] #pitch-note { color: var(--ok); }
+.pitch[data-state="close"] #pitch-note { color: var(--warn); }
+.pitch[data-state="off"] #pitch-note { color: var(--danger); }
+.meter { position: relative; height: 26px; margin: 8px 0 4px; background: var(--surface); border-radius: 13px; }
+.meter-zone { position: absolute; left: 33.3%; width: 33.4%; top: 0; bottom: 0; background: rgba(76, 191, 122, 0.22); }
+.needle { position: absolute; top: -3px; bottom: -3px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--text); transition: left 0.08s linear; }
+.meter-end { position: absolute; top: 4px; font-size: 0.7rem; color: var(--muted); }
+.meter-end.flat { left: 10px; }
+.meter-end.sharp { right: 10px; }
+.pitch-status { margin: 6px 0 0; text-align: center; font-size: 0.95rem; }
+.pitch-score { margin: 4px 0 0; text-align: center; font-size: 0.85rem; color: var(--muted); }
+.pitch-score:empty { display: none; }
+.mic-error { color: var(--warn); font-size: 0.88rem; margin: 6px 0 0; }
+.checkin-score { font-weight: 600; color: var(--accent-2); margin: 0 0 12px; }

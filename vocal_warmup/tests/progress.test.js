@@ -109,3 +109,9 @@ test("midiToFreq matches concert pitch", () => {
   assert.equal(P.midiToFreq(69), 440);
   assert.ok(Math.abs(P.midiToFreq(57) - 220) < 1e-9);
 });
+
+test("recordSession stores pitch accuracy when given", () => {
+  const s = withSessions([{ stage: 1, feeling: "fresh", pitchAccuracy: 82 }, { stage: 1, feeling: "fresh" }]);
+  assert.equal(s.sessions[0].pitchAccuracy, 82);
+  assert.equal(s.sessions[1].pitchAccuracy, null);
+});

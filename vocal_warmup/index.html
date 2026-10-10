@@ -74,10 +74,29 @@
           <button id="play-btn" type="button" class="primary">Start</button>
           <button id="next-btn" type="button" class="secondary" aria-label="Next exercise">&#9654;</button>
         </div>
+        <div id="pitch-panel" class="pitch" data-state="idle" hidden>
+          <div class="pitch-row">
+            <div><span class="pitch-label">You</span><span id="pitch-note" class="pitch-note">–</span></div>
+            <div><span class="pitch-label">Target</span><span id="pitch-target" class="pitch-note">–</span></div>
+          </div>
+          <div class="meter" aria-hidden="true">
+            <div class="meter-zone"></div>
+            <div id="meter-needle" class="needle" hidden></div>
+            <span class="meter-end flat">flat</span><span class="meter-end sharp">sharp</span>
+          </div>
+          <p id="pitch-status" class="pitch-status" aria-live="polite">Listening…</p>
+          <p id="pitch-score" class="pitch-score"></p>
+        </div>
+
         <label class="toggle" id="tone-toggle-wrap">
           <input id="tone-toggle" type="checkbox" checked>
           Reference tones
         </label>
+        <label class="toggle">
+          <input id="mic-toggle" type="checkbox">
+          Pitch check (mic). Wear headphones so it hears you, not the reference.
+        </label>
+        <p id="mic-error" class="mic-error" hidden></p>
       </div>
 
       <button id="stop-btn" class="link danger" type="button">Stop: my voice doesn't feel right</button>
@@ -89,6 +108,7 @@
       <div class="card">
         <h2>How does your voice feel?</h2>
         <p class="muted">Be honest. This decides when the next stage unlocks and when you should rest.</p>
+        <p id="checkin-score" class="checkin-score" hidden></p>
         <div id="feelings" class="feelings"></div>
       </div>
     </section>
@@ -96,6 +116,7 @@
 
   <script src="curriculum.js"></script>
   <script src="progress.js"></script>
+  <script src="pitch.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

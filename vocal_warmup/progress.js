@@ -3,7 +3,9 @@
 //
 // state = {
 //   range: "low" | "mid" | "high",
-//   sessions: [{ date: ISO string, stage: number, warmupOnly: bool, feeling: FEELING }]
+//   mic: bool,  // pitch check on
+//   sessions: [{ date: ISO string, stage: number, warmupOnly: bool, feeling: FEELING,
+//                pitchAccuracy: 0-100 | null }]
 // }
 
 (function (root) {
@@ -19,7 +21,7 @@
   const DAY_MS = 24 * 60 * 60 * 1000;
 
   function defaultState() {
-    return { range: "mid", sessions: [] };
+    return { range: "mid", mic: false, sessions: [] };
   }
 
   function isHealthy(session) {
@@ -128,12 +130,10 @@
     return { stage, items, warmupOnly: blocked };
   }
 
-  function recordSession(state, { stage, warmupOnly, feeling, date = new Date() }) {
+  function recordSession(state, { stage, warmupOnly, feeling, pitchAccuracy = null, date = new Date() }) {
     if (!FEELINGS[feeling]) throw new Error(`Unknown feeling ${feeling}`);
-    return {
-      ...state,
-      sessions: [...state.sessions, { date: date.toISOString(), stage, warmupOnly: Boolean(warmupOnly), feeling }],
-    };
+    const session = { date: date.toISOString(), stage, warmupOnly: Boolean(warmupOnly), feeling, pitchAccuracy };
+    return { ...state, sessions: [...state.sessions, session] };
   }
 
   function totalSeconds(items) {
