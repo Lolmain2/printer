@@ -1,0 +1,48 @@
+name: Build Scream Coach exe
+
+on:
+  push:
+    paths:
+      - "vocal_warmup/**"
+      - ".github/workflows/build-scream-coach.yml"
+    tags: ["coach-v*"]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: vocal_warmup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: vocal_warmup/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build portable exe
+        # No code-signing certificate: skip signing instead of searching for one.
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreamCoach-windows-exe
+          path: vocal_warmup/dist/ScreamCoach.exe
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/coach-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vocal_warmup/dist/ScreamCoach.exe

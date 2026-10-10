@@ -1,0 +1,42 @@
+{
+  "name": "scream-coach",
+  "productName": "Scream Coach",
+  "version": "1.0.0",
+  "description": "Vocal warm-ups that build up to fry, false cord and other extreme vocal techniques.",
+  "private": true,
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "dist": "electron-builder --win portable --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.screamcoach.app",
+    "productName": "Scream Coach",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "curriculum.js",
+      "progress.js",
+      "pitch.js",
+      "desktop/main.js",
+      "desktop/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "desktop/icon.png"
+    },
+    "portable": {
+      "artifactName": "ScreamCoach.exe"
+    }
+  }
+}

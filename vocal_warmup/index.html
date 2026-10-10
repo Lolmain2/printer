@@ -3,116 +3,186 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#14161c">
+  <meta name="theme-color" content="#0f1115">
   <title>Scream Coach</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <h1>Scream Coach</h1>
-    <p class="tagline">Warm up properly, then build up to distortion.</p>
-  </header>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="10.5" width="13" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-practice" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 10.5v3M21 12h0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-progress" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L19 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-safety" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.5-3 8-7 9.5-4-1.5-7-5-7-9.5V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  </svg>
 
-  <main>
-    <!-- Home -->
-    <section id="home" class="screen">
-      <div id="advice"></div>
-
-      <div class="card">
-        <h2>Your voice range</h2>
-        <p class="muted">Sets the pitch of the reference tones. Pick whichever feels comfortable.</p>
-        <div id="range-picker" class="chips" role="radiogroup" aria-label="Voice range"></div>
+  <div class="app">
+    <nav class="nav" aria-label="Main">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><svg><use href="#i-practice"/></svg></span>
+        <span class="brand-name">Scream Coach</span>
       </div>
+      <button class="nav-item" data-view="practice" type="button"><svg><use href="#i-practice"/></svg><span>Practice</span></button>
+      <button class="nav-item" data-view="progress" type="button"><svg><use href="#i-progress"/></svg><span>Progress</span></button>
+      <button class="nav-item" data-view="safety" type="button"><svg><use href="#i-safety"/></svg><span>Safety</span></button>
+      <button class="nav-item" data-view="settings" type="button"><svg><use href="#i-settings"/></svg><span>Settings</span></button>
+    </nav>
 
-      <div class="card">
-        <h2>Stages</h2>
-        <p class="muted">Each session is a warm-up, then your stage, then a cool-down. A stage unlocks after
-          enough sessions at the previous one with a healthy check-in.</p>
-        <ol id="stage-list" class="stage-list"></ol>
-      </div>
+    <main class="main">
+      <!-- Practice -->
+      <section id="view-practice" class="view">
+        <div id="advice"></div>
 
-      <div class="card">
-        <h2>History</h2>
-        <ul id="history" class="history"></ul>
-        <button id="reset-btn" class="link danger" type="button">Reset all progress</button>
-      </div>
+        <div class="hero">
+          <p class="eyebrow">Today's session</p>
+          <h1 id="hero-title"></h1>
+          <p id="hero-plan" class="hero-plan"></p>
+          <div class="hero-actions">
+            <button id="start-btn" class="btn btn-primary btn-lg" type="button">
+              <svg><use href="#i-play"/></svg><span>Start session</span>
+            </button>
+            <span id="hero-length" class="muted"></span>
+          </div>
+        </div>
 
-      <details class="card">
-        <summary><h2 class="inline">Safety rules</h2></summary>
+        <h2 class="section-title">Your path</h2>
+        <ol id="path" class="path"></ol>
+      </section>
+
+      <!-- Progress -->
+      <section id="view-progress" class="view" hidden>
+        <h1 class="page-title">Progress</h1>
+        <div class="stats">
+          <div class="stat"><span id="stat-sessions" class="stat-value">0</span><span class="stat-label">Sessions</span></div>
+          <div class="stat"><span id="stat-stage" class="stat-value">1</span><span class="stat-label">Current stage</span></div>
+          <div class="stat"><span id="stat-pitch" class="stat-value">–</span><span class="stat-label">Pitch accuracy, last 5</span></div>
+        </div>
+        <h2 class="section-title">History</h2>
+        <ul id="history" class="list"></ul>
+      </section>
+
+      <!-- Safety -->
+      <section id="view-safety" class="view" hidden>
+        <h1 class="page-title">Safety</h1>
+        <p class="lead">Done right, screaming happens above your vocal folds, not on them. These rules keep it that way.</p>
         <ul class="rules">
-          <li><strong>Pain means stop.</strong> Tickle, scratch or a raw feeling means no more distortion today.</li>
-          <li>Always warm up first and cool down after. Never scream on a cold voice.</li>
-          <li>Short bursts and full rests. Volume comes from support, not squeezing.</li>
-          <li>Don't practise when you're sick, losing your voice, or after a night of shouting.</li>
-          <li>Hoarseness lasting more than 2 weeks, losing your voice, pain when talking, or coughing blood: see an ENT / laryngologist.</li>
-          <li>This app is a practice guide, not a teacher. A good extreme-vocals coach is worth it.</li>
+          <li><strong>Pain means stop.</strong> A tickle, scratch or raw feeling means no more distortion today.</li>
+          <li><strong>Warm up first, cool down after.</strong> Never scream on a cold voice.</li>
+          <li><strong>Short bursts, full rests.</strong> Volume comes from support, not squeezing.</li>
+          <li><strong>Skip practice when your voice is down.</strong> That means when you're sick, losing your voice, or the day after shouting.</li>
+          <li><strong>See a doctor if it lasts.</strong> Hoarseness lasting more than 2 weeks, losing your voice, pain when talking, or coughing blood means a visit to an ENT / laryngologist.</li>
+          <li><strong>This is a practice guide, not a teacher.</strong> A good extreme-vocals coach is worth it.</li>
         </ul>
-        <p class="muted">The science behind it is in <code>RESEARCH.md</code>.</p>
-      </details>
-    </section>
+        <p class="muted small">The research behind these rules is in RESEARCH.md in the project source.</p>
+      </section>
 
-    <!-- Session player -->
-    <section id="session" class="screen" hidden>
-      <div class="session-head">
-        <span id="section-label" class="section-label"></span>
-        <span id="step-count" class="muted"></span>
-      </div>
-      <div class="overall"><div id="overall-bar"></div></div>
-
-      <div class="card exercise">
-        <h2 id="ex-name"></h2>
-        <ol id="ex-steps" class="steps"></ol>
-        <p id="ex-cue" class="cue"></p>
-
-        <div class="timer">
-          <div class="timer-track"><div id="timer-bar"></div></div>
-          <span id="timer-text" class="timer-text">0:00</span>
-        </div>
-
-        <div class="controls">
-          <button id="prev-btn" type="button" class="secondary" aria-label="Previous exercise">&#9664;</button>
-          <button id="play-btn" type="button" class="primary">Start</button>
-          <button id="next-btn" type="button" class="secondary" aria-label="Next exercise">&#9654;</button>
-        </div>
-        <div id="pitch-panel" class="pitch" data-state="idle" hidden>
-          <div class="pitch-row">
-            <div><span class="pitch-label">You</span><span id="pitch-note" class="pitch-note">–</span></div>
-            <div><span class="pitch-label">Target</span><span id="pitch-target" class="pitch-note">–</span></div>
+      <!-- Settings -->
+      <section id="view-settings" class="view" hidden>
+        <h1 class="page-title">Settings</h1>
+        <div class="setting">
+          <div>
+            <h3>Voice range</h3>
+            <p class="muted">Sets the pitch of the reference tones.</p>
           </div>
-          <div class="meter" aria-hidden="true">
-            <div class="meter-zone"></div>
-            <div id="meter-needle" class="needle" hidden></div>
-            <span class="meter-end flat">flat</span><span class="meter-end sharp">sharp</span>
+          <div id="range-picker" class="segmented" role="radiogroup" aria-label="Voice range"></div>
+        </div>
+        <div class="setting">
+          <div>
+            <h3>Pitch check</h3>
+            <p class="muted">Use the microphone to check you're on the note. Wear headphones.</p>
           </div>
-          <p id="pitch-status" class="pitch-status" aria-live="polite">Listening…</p>
-          <p id="pitch-score" class="pitch-score"></p>
+          <label class="switch"><input id="mic-default" type="checkbox"><span></span></label>
+        </div>
+        <div class="setting">
+          <div>
+            <h3>Reset progress</h3>
+            <p class="muted">Deletes your history and locks every stage again.</p>
+          </div>
+          <button id="reset-btn" class="btn btn-danger" type="button">Reset</button>
+        </div>
+      </section>
+
+      <!-- Session player (focus mode: nav hidden) -->
+      <section id="view-session" class="view session" hidden>
+        <header class="session-bar">
+          <button id="quit-btn" class="icon-btn" type="button" aria-label="Quit session" title="Quit session"><svg><use href="#i-close"/></svg></button>
+          <span id="section-label" class="section-label"></span>
+          <span id="step-count" class="muted small"></span>
+        </header>
+        <div id="segments" class="segments"></div>
+
+        <div class="session-body">
+          <div class="exercise">
+            <h1 id="ex-name"></h1>
+            <ol id="ex-steps" class="steps"></ol>
+            <p id="ex-cue" class="cue"></p>
+            <p id="up-next" class="up-next"></p>
+          </div>
+
+          <div class="console">
+            <div class="ring">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="54"/>
+                <circle id="ring-fill" class="ring-fill" cx="60" cy="60" r="54"/>
+              </svg>
+              <span id="timer-text" class="ring-time">0:00</span>
+            </div>
+
+            <div class="controls">
+              <button id="prev-btn" class="icon-btn lg" type="button" aria-label="Previous exercise" title="Previous (←)"><svg><use href="#i-prev"/></svg></button>
+              <button id="play-btn" class="play" type="button" aria-label="Start" title="Start / pause (Space)"><svg><use id="play-icon" href="#i-play"/></svg></button>
+              <button id="next-btn" class="icon-btn lg" type="button" aria-label="Next exercise" title="Next (→)"><svg><use id="next-icon" href="#i-next"/></svg></button>
+            </div>
+
+            <div id="pitch-panel" class="pitch" data-state="idle" hidden>
+              <div class="pitch-row">
+                <div><span class="pitch-label">You</span><span id="pitch-note" class="pitch-note">–</span></div>
+                <div><span class="pitch-label">Target</span><span id="pitch-target" class="pitch-note">–</span></div>
+              </div>
+              <div class="meter" aria-hidden="true">
+                <div class="meter-zone"></div>
+                <div id="meter-needle" class="needle" hidden></div>
+              </div>
+              <div class="meter-ends" aria-hidden="true"><span>flat</span><span>sharp</span></div>
+              <p id="pitch-status" class="pitch-status" aria-live="polite">Listening…</p>
+              <p id="pitch-score" class="pitch-score"></p>
+            </div>
+
+            <div class="toggles">
+              <label class="toggle" id="tone-toggle-wrap">
+                <span>Reference tones</span>
+                <span class="switch"><input id="tone-toggle" type="checkbox" checked><span></span></span>
+              </label>
+              <label class="toggle">
+                <span>Pitch check (mic)</span>
+                <span class="switch"><input id="mic-toggle" type="checkbox"><span></span></span>
+              </label>
+              <p id="mic-error" class="mic-error" hidden></p>
+            </div>
+          </div>
         </div>
 
-        <label class="toggle" id="tone-toggle-wrap">
-          <input id="tone-toggle" type="checkbox" checked>
-          Reference tones
-        </label>
-        <label class="toggle">
-          <input id="mic-toggle" type="checkbox">
-          Pitch check (mic). Wear headphones so it hears you, not the reference.
-        </label>
-        <p id="mic-error" class="mic-error" hidden></p>
-      </div>
+        <button id="stop-btn" class="stop-link" type="button">My voice doesn't feel right. Stop now.</button>
+      </section>
 
-      <button id="stop-btn" class="link danger" type="button">Stop: my voice doesn't feel right</button>
-      <button id="quit-btn" class="link" type="button">Quit session</button>
-    </section>
-
-    <!-- Check-in -->
-    <section id="checkin" class="screen" hidden>
-      <div class="card">
-        <h2>How does your voice feel?</h2>
-        <p class="muted">Be honest. This decides when the next stage unlocks and when you should rest.</p>
-        <p id="checkin-score" class="checkin-score" hidden></p>
-        <div id="feelings" class="feelings"></div>
-      </div>
-    </section>
-  </main>
+      <!-- Check-in -->
+      <section id="view-checkin" class="view checkin" hidden>
+        <div class="checkin-card">
+          <span class="checkin-icon" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+          <h1>Session done</h1>
+          <p id="checkin-score" class="checkin-score" hidden></p>
+          <p class="muted">How does your voice feel right now? Be honest. This decides when the next stage unlocks.</p>
+          <div id="feelings" class="feelings"></div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script src="curriculum.js"></script>
   <script src="progress.js"></script>

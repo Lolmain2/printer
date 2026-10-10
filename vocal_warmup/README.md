@@ -5,7 +5,39 @@ step by step toward vocal fry, fry screams, false cord screams, highs and lows.
 The curriculum and safety rules are based on the research in
 [RESEARCH.md](RESEARCH.md).
 
-## Running it
+## Desktop app (Windows .exe)
+
+`ScreamCoach.exe` is a single portable file. There's nothing to install, just
+double-click it.
+
+**Getting the exe:** every push that changes `vocal_warmup/` builds it on
+GitHub. Open the repo's **Actions** tab, then the latest **Build Scream Coach
+exe** run, and download **ScreamCoach-windows-exe** under *Artifacts*. It comes
+as a zip, so unzip it to get `ScreamCoach.exe`. Pushing a tag such as
+`coach-v1.0.0` also attaches the exe to a GitHub Release.
+
+**First launch:**
+- The exe isn't code-signed, so Windows SmartScreen may say "Windows protected
+  your PC". Click **More info → Run anyway**.
+- It takes a few seconds to open because the portable exe unpacks itself
+  first.
+- For the pitch check, Windows has to allow desktop apps to use the mic:
+  **Settings → Privacy & security → Microphone → Let desktop apps access your
+  microphone**.
+
+Progress is saved in `%APPDATA%\Scream Coach`, so it survives moving or
+replacing the exe.
+
+**Building it yourself** (Node 22, from this folder):
+
+```
+npm install
+npm start        # run the desktop app
+npm test         # unit tests
+npm run dist     # build dist/ScreamCoach.exe (works on Windows and Linux)
+```
+
+## Running in a browser
 
 No install or build step. Open `index.html` in a browser (double-click it),
 or serve the folder and open it on your phone:
@@ -26,6 +58,8 @@ something with HTTPS (for example GitHub Pages).
 
 ## How it works
 
+- **Practice tab:** today's session with one Start button, and your path
+  through the stages. Click any unlocked stage to practise it instead.
 - **Every session:** warm-up (body release, support breath, lip trills, straw
   sirens, humming), then the technique block for your stage, then a cool-down.
 - **7 stages:** clean fry → retraction (the "silent laugh") → inhale fry → fry
@@ -46,7 +80,9 @@ something with HTTPS (for example GitHub Pages).
 - **Check-in after each session:** "scratchy" or "pain" pauses all distortion
   stages until a healthy session. Pain shows rest advice, and about two weeks
   of bad check-ins tells you to see an ENT / laryngologist.
-- **"Stop: my voice doesn't feel right"** ends a session immediately and goes
+- **Keyboard (desktop):** Space starts or pauses, ← and → move between
+  exercises, and Esc quits the session.
+- **"My voice doesn't feel right. Stop now."** ends a session immediately and goes
   straight to the check-in.
 
 ## Files
@@ -57,6 +93,8 @@ something with HTTPS (for example GitHub Pages).
 | `progress.js` | Unlocking, safety gating, session building (pure functions) |
 | `app.js` | UI, timer, Web Audio reference tones, mic capture |
 | `pitch.js` | Pitch detection (McLeod method) and note/target maths (pure functions) |
-| `tests/` | Unit tests: `node --test vocal_warmup/tests/*.test.js` |
+| `desktop/main.js` | Electron shell for the desktop app (window, mic-only permission) |
+| `desktop/icon.png` | App icon |
+| `tests/` | Unit tests: `npm test` (or `node --test vocal_warmup/tests/*.test.js` from the repo root) |
 
 This is a practice aid, not a substitute for a voice teacher.

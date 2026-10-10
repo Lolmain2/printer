@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .label_index_cache.json
 *.egg-info/
+vocal_warmup/node_modules/
+vocal_warmup/dist/

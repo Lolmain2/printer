@@ -284,10 +284,18 @@
     }
   }
 
-  // ---- Home --------------------------------------------------------------
+  // ---- Navigation ------------------------------------------------------
 
-  function show(screenId) {
-    for (const s of document.querySelectorAll(".screen")) s.hidden = s.id !== screenId;
+  let view = "practice";
+
+  function show(viewId) {
+    view = viewId;
+    for (const s of document.querySelectorAll(".view")) s.hidden = s.id !== `view-${viewId}`;
+    for (const b of document.querySelectorAll(".nav-item")) {
+      if (b.dataset.view === viewId) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    }
+    document.body.classList.toggle("in-session", viewId === "session" || viewId === "checkin");
     window.scrollTo(0, 0);
   }
 
@@ -296,123 +304,187 @@
     return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
   }
 
+  function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function icon(name) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    const use = document.createElementNS(ns, "use");
+    use.setAttribute("href", `#i-${name}`);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  // ---- Practice ----------------------------------------------------------
+
+  let selectedStage = null; // null = the highest unlocked stage
+
+  function activeStage() {
+    const unlocked = P.highestUnlocked(state);
+    return selectedStage && selectedStage <= unlocked ? selectedStage : unlocked;
+  }
+
   function renderAdvice() {
     const box = $("advice");
     box.innerHTML = "";
     for (const a of P.safetyAdvice(state)) {
-      const div = document.createElement("div");
-      div.className = `card advice ${a.level}`;
-      const p = document.createElement("p");
-      p.textContent = a.text;
-      div.appendChild(p);
+      const div = el("div", `advice ${a.level}`);
+      div.appendChild(el("p", null, a.text));
       box.appendChild(div);
     }
   }
 
-  function renderRange() {
-    const box = $("range-picker");
-    box.innerHTML = "";
-    for (const [key, r] of Object.entries(RANGES)) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "chip";
-      b.setAttribute("role", "radio");
-      b.setAttribute("aria-checked", String(state.range === key));
-      b.textContent = r.label;
-      b.addEventListener("click", () => {
-        state.range = key;
-        saveState();
-        renderRange();
-      });
-      box.appendChild(b);
-    }
+  function renderHero() {
+    const plan = P.buildSession(state, activeStage());
+    const stage = plan.stage;
+    const counts = { Warm: 0, Stage: 0, Cool: 0 };
+    for (const it of plan.items) counts[it.section.split(/[- ]/)[0]]++;
+    $("hero-title").textContent = `Stage ${stage.id} · ${stage.name}`;
+    $("hero-plan").textContent = plan.warmupOnly
+      ? "Warm-up and cool-down only. Distortion is paused until your voice feels healthy again."
+      : `Warm-up (${counts.Warm}) → ${counts.Stage} technique exercises → cool-down (${counts.Cool}). ${stage.goal}`;
+    $("hero-length").textContent = `About ${Math.round(P.totalSeconds(plan.items) / 60)} min`;
   }
 
-  function renderStages() {
-    const list = $("stage-list");
+  function renderPath() {
+    const list = $("path");
     list.innerHTML = "";
     const unlocked = P.highestUnlocked(state);
-    const blocked = P.distortionBlocked(state);
+    const active = activeStage();
     for (const stage of STAGES) {
-      const li = document.createElement("li");
-      const isLocked = stage.id > unlocked;
-      li.className = "stage" + (isLocked ? " locked" : "");
-
-      const h = document.createElement("h3");
-      h.textContent = `${stage.id}. ${stage.name}`;
-      if (stage.distortion) {
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = "distortion";
-        h.appendChild(badge);
-      }
-      const goal = document.createElement("p");
-      goal.textContent = stage.goal;
-
-      const meta = document.createElement("span");
-      meta.className = "meta";
-      const { done, needed } = P.stageProgress(state, stage.id);
-      if (isLocked) meta.textContent = "Locked";
-      else if (needed == null) meta.textContent = `${done} healthy sessions`;
-      else meta.textContent = `${Math.min(done, needed)} / ${needed} healthy sessions to unlock next`;
-
-      const btn = document.createElement("button");
+      const locked = stage.id > unlocked;
+      const done = stage.id < unlocked;
+      const li = el("li");
+      const btn = el("button", "path-item");
       btn.type = "button";
-      btn.className = stage.id === unlocked ? "primary" : "secondary";
-      btn.disabled = isLocked;
-      const warmupOnly = stage.distortion && blocked;
-      btn.textContent = isLocked ? "🔒" : warmupOnly ? "Warm-up only" : "Practise";
-      btn.addEventListener("click", () => startSession(stage.id));
+      btn.disabled = locked;
+      btn.classList.toggle("locked", locked);
+      btn.classList.toggle("done", done);
+      btn.classList.toggle("current", stage.id === unlocked);
+      btn.classList.toggle("selected", stage.id === active);
+      btn.addEventListener("click", () => {
+        selectedStage = stage.id;
+        renderPractice();
+      });
 
-      li.append(h, btn, goal, meta);
+      const dot = el("span", "path-dot");
+      if (locked) dot.appendChild(icon("lock"));
+      else if (done) dot.appendChild(icon("check"));
+      else dot.textContent = stage.id;
+
+      const text = el("span", "path-text");
+      const name = el("span", "path-name", stage.name);
+      if (stage.distortion) name.appendChild(el("span", "tag", "distortion"));
+      text.append(name, el("span", "path-goal", stage.goal));
+
+      if (!locked) {
+        const { done: n, needed } = P.stageProgress(state, stage.id);
+        const meta = el("span", "path-meta");
+        if (needed == null) {
+          meta.textContent = `${n} healthy session${n === 1 ? "" : "s"}`;
+        } else if (done) {
+          meta.textContent = "Complete";
+        } else {
+          const bar = el("span", "mini-bar");
+          const fill = el("span");
+          fill.style.width = `${(100 * Math.min(n, needed)) / needed}%`;
+          bar.appendChild(fill);
+          meta.append(bar, `${Math.min(n, needed)} of ${needed} sessions to unlock the next stage`);
+        }
+        text.appendChild(meta);
+      }
+
+      btn.append(dot, text);
+      li.appendChild(btn);
       list.appendChild(li);
     }
   }
 
-  function renderHistory() {
+  function renderPractice() {
+    renderAdvice();
+    renderHero();
+    renderPath();
+  }
+
+  // ---- Progress ----------------------------------------------------------
+
+  function renderProgress() {
+    $("stat-sessions").textContent = state.sessions.length;
+    $("stat-stage").textContent = P.highestUnlocked(state);
+    const scored = state.sessions.filter((s) => s.pitchAccuracy != null).slice(-5);
+    $("stat-pitch").textContent = scored.length
+      ? `${Math.round(scored.reduce((a, s) => a + s.pitchAccuracy, 0) / scored.length)}%`
+      : "–";
+
     const ul = $("history");
     ul.innerHTML = "";
-    const recent = state.sessions.slice(-10).reverse();
+    const recent = state.sessions.slice(-30).reverse();
     if (!recent.length) {
-      const li = document.createElement("li");
-      li.className = "muted";
-      li.textContent = "No sessions yet. Start with Stage 1.";
-      ul.appendChild(li);
+      ul.appendChild(el("li", "empty", "No sessions yet. Your history will show up here."));
       return;
     }
     for (const s of recent) {
-      const li = document.createElement("li");
-      const left = document.createElement("span");
-      const dot = document.createElement("span");
-      dot.className = `dot ${s.feeling}`;
-      left.append(dot, `Stage ${s.stage}${s.warmupOnly ? " (warm-up only)" : ""}`);
-      const right = document.createElement("span");
-      right.className = "muted";
-      right.textContent =
-        (s.pitchAccuracy != null ? `${s.pitchAccuracy}% on pitch · ` : "") + new Date(s.date).toLocaleDateString();
-      li.append(left, right);
+      const li = el("li");
+      const stage = STAGES.find((st) => st.id === s.stage);
+      li.append(
+        el("span", `dot ${s.feeling}`),
+        el("span", "grow", `Stage ${s.stage}: ${stage ? stage.name : ""}${s.warmupOnly ? " (warm-up only)" : ""}`),
+      );
+      if (s.pitchAccuracy != null) li.appendChild(el("span", "muted small", `${s.pitchAccuracy}% on pitch`));
+      li.appendChild(el("span", "muted small", new Date(s.date).toLocaleDateString()));
+      li.title = P.FEELINGS[s.feeling] ? P.FEELINGS[s.feeling].label : "";
       ul.appendChild(li);
     }
   }
 
-  function renderHome() {
-    renderAdvice();
-    renderRange();
-    renderStages();
-    renderHistory();
-    show("home");
+  // ---- Settings ----------------------------------------------------------
+
+  function renderSettings() {
+    const box = $("range-picker");
+    box.innerHTML = "";
+    for (const [key, r] of Object.entries(RANGES)) {
+      const b = el("button", null, r.label);
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(state.range === key));
+      b.addEventListener("click", () => {
+        state.range = key;
+        saveState();
+        renderSettings();
+      });
+      box.appendChild(b);
+    }
+    $("mic-default").checked = Boolean(state.mic);
+  }
+
+  function goView(v) {
+    if (v === "practice") renderPractice();
+    if (v === "progress") renderProgress();
+    if (v === "settings") renderSettings();
+    show(v);
   }
 
   // ---- Session player ----------------------------------------------------
 
-  let session = null; // { plan, index, remaining, running, lastTick, interval }
+  let session = null; // { plan, index, remaining, running, lastTick, interval, scores }
+  const RING = 2 * Math.PI * 54;
 
   function startSession(stageId) {
     const plan = P.buildSession(state, stageId);
     session = { plan, index: 0, remaining: plan.items[0].exercise.seconds, running: false, interval: null, scores: {} };
+    const seg = $("segments");
+    seg.innerHTML = "";
+    for (let i = 0; i < plan.items.length; i++) seg.appendChild(el("span"));
     renderExercise();
     show("session");
     $("mic-error").hidden = true;
+    $("mic-toggle").checked = false;
+    $("pitch-panel").hidden = true;
     if (!Mic.supported()) {
       $("mic-toggle").disabled = true;
       $("mic-error").hidden = false;
@@ -430,23 +502,25 @@
     const { section, exercise } = current();
     const items = session.plan.items;
     $("section-label").textContent = section;
-    $("step-count").textContent = `${session.index + 1} / ${items.length}`;
+    $("step-count").textContent = `${session.index + 1} of ${items.length}`;
     $("ex-name").textContent = exercise.name;
 
     const steps = $("ex-steps");
     steps.innerHTML = "";
-    for (const s of exercise.steps) {
-      const li = document.createElement("li");
-      li.textContent = s;
-      steps.appendChild(li);
-    }
+    for (const s of exercise.steps) steps.appendChild(el("li", null, s));
     $("ex-cue").textContent = exercise.cue;
+    const next = items[session.index + 1];
+    $("up-next").textContent = next ? `Up next: ${next.exercise.name}` : "Last one. Then a quick check-in.";
+
     $("tone-toggle-wrap").hidden = !exercise.tone;
     $("prev-btn").disabled = session.index === 0;
-    $("next-btn").textContent = session.index === items.length - 1 ? "✓" : "▶";
+    const last = session.index === items.length - 1;
+    $("next-icon").setAttribute("href", last ? "#i-check" : "#i-next");
+    $("next-btn").setAttribute("aria-label", last ? "Finish session" : "Next exercise");
 
-    const before = P.totalSeconds(items.slice(0, session.index));
-    $("overall-bar").style.width = `${(100 * before) / P.totalSeconds(items)}%`;
+    [...$("segments").children].forEach((s, i) => {
+      s.className = i < session.index ? "done" : i === session.index ? "now" : "";
+    });
     renderTimer();
     renderPlayButton();
     renderExerciseScore();
@@ -455,11 +529,13 @@
   function renderTimer() {
     const total = current().exercise.seconds;
     $("timer-text").textContent = fmtTime(session.remaining);
-    $("timer-bar").style.width = `${(100 * (total - session.remaining)) / total}%`;
+    $("ring-fill").style.strokeDasharray = RING;
+    $("ring-fill").style.strokeDashoffset = RING * (session.remaining / total);
   }
 
   function renderPlayButton() {
-    $("play-btn").textContent = session.running ? "Pause" : session.remaining < current().exercise.seconds ? "Resume" : "Start";
+    $("play-icon").setAttribute("href", session.running ? "#i-pause" : "#i-play");
+    $("play-btn").setAttribute("aria-label", session.running ? "Pause" : "Start");
   }
 
   function syncTones() {
@@ -546,12 +622,9 @@
     const box = $("feelings");
     box.innerHTML = "";
     for (const [key, f] of Object.entries(P.FEELINGS)) {
-      const b = document.createElement("button");
+      const b = el("button");
       b.type = "button";
-      b.className = "secondary";
-      const dot = document.createElement("span");
-      dot.className = `dot ${key}`;
-      b.append(dot, f.label);
+      b.append(el("span", `dot ${key}`), f.label);
       b.addEventListener("click", () => {
         state = P.recordSession(state, {
           stage: session.plan.stage.id,
@@ -561,14 +634,26 @@
         });
         saveState();
         session = null;
-        renderHome();
+        selectedStage = null;
+        goView("practice");
       });
       box.appendChild(b);
     }
   }
 
+  function quitSession() {
+    if (!confirm("Quit without recording this session?")) return;
+    endSession();
+    session = null;
+    goView("practice");
+  }
+
   // ---- Wiring ------------------------------------------------------------
 
+  for (const b of document.querySelectorAll(".nav-item")) {
+    b.addEventListener("click", () => goView(b.dataset.view));
+  }
+  $("start-btn").addEventListener("click", () => startSession(activeStage()));
   $("play-btn").addEventListener("click", () => {
     Tones.ensureCtx(); // must be created from a user gesture on iOS
     setRunning(!session.running);
@@ -580,19 +665,40 @@
     await setMic(e.target.checked);
     syncTones(); // start or stop silent targets for a muted reference
   });
-  $("stop-btn").addEventListener("click", finishSession);
-  $("quit-btn").addEventListener("click", () => {
-    if (!confirm("Quit without recording this session?")) return;
-    endSession();
-    session = null;
-    renderHome();
+  $("mic-default").addEventListener("change", (e) => {
+    state.mic = e.target.checked;
+    saveState();
   });
+  $("stop-btn").addEventListener("click", finishSession);
+  $("quit-btn").addEventListener("click", quitSession);
   $("reset-btn").addEventListener("click", () => {
     if (!confirm("Delete all progress and history?")) return;
     state = P.defaultState();
+    selectedStage = null;
     saveState();
-    renderHome();
+    renderSettings();
   });
 
-  renderHome();
+  // Keyboard: Space = start/pause, arrows = previous/next, Esc = quit.
+  document.addEventListener("keydown", (e) => {
+    if (view !== "session" || !session || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.closest && e.target.closest("input")) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      $("play-btn").click();
+    } else if (e.key === "ArrowRight") {
+      goTo(session.index + 1, true);
+    } else if (e.key === "ArrowLeft" && session.index > 0) {
+      goTo(session.index - 1, true);
+    } else if (e.key === "Escape") {
+      quitSession();
+    }
+  });
+
+  // A focused button would also "click" on Space keyup; the handler above already did.
+  document.addEventListener("keyup", (e) => {
+    if (view === "session" && e.code === "Space" && !(e.target.closest && e.target.closest("input"))) e.preventDefault();
+  });
+
+  goView("practice");
 })();
