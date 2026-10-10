@@ -404,6 +404,8 @@ button:focus-visible, .switch input:focus-visible + span { outline: 2px solid va
 }
 .chip-note.lit { background: var(--accent-soft); border-color: var(--accent); }
 .chip-ok { padding: 3px 10px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-size: 0.85rem; font-weight: 600; }
+.panel-note:empty { display: none; }
+.note-detail { min-height: 1.4em; margin: 8px 0 0; font-size: 0.9rem; }
 .panel-note { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: 0.9rem; margin: 0; }
 .panel-note .btn { margin-top: 6px; }
 .panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -471,4 +473,6 @@ button:focus-visible, .switch input:focus-visible + span { outline: 2px solid va
   .drill-console { padding: 14px; }
   .drill-console .pitch-row { justify-content: space-between; }
   .session-bar .icon-btn { width: 44px; height: 44px; }
+  .btn-small, .link-btn, .segmented button { min-height: 44px; }
+  .how summary { padding: 11px 0; }
 }

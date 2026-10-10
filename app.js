@@ -125,9 +125,13 @@
       return;
     }
     try {
-      await Mic.open();
+      // The session may have ended or the toggle flipped while the
+      // permission prompt was up.
+      const opened = await Mic.open();
+      if (!opened || !session || !state.mic) return;
       Mic.subscribe(pitchTick);
     } catch (e) {
+      if (!session) return; // ended while waiting; the mic may belong to someone else now
       Mic.close();
       state.mic = false;
       saveState();

@@ -303,8 +303,8 @@
 
   function stageLabel(ps, id, window) {
     const hits = sum(window);
-    if (id === 1) return `${sum(window.slice(-6))} of 5 in your last 6`;
-    if (id === 2) return `${hits} of 8 needed in your last 10`;
+    if (id === 1) return `${sum(window.slice(-6))} of your last 6 (need 5)`;
+    if (id === 2) return `${hits} of your last 10 (need 8)`;
     if (id === 3) return `Notes up to ${spanOf(ps)} from home (goal 6) · ${hits}/10 this step`;
     const level = tolLevelOf(ps);
     const next = TOL_LADDER[level + 1];
@@ -396,7 +396,7 @@
   }
 
   function nextTrialPlan(ps, stageId, opts = {}) {
-    const { prevTarget = null, lastOutcome = null, lastGrade = null, missRun = 0, setIndex = 0 } = opts;
+    const { prevTarget = null, lastOutcome = null, lastGrade = null, missRun = 0, setIndex = 0, lastRetry = false } = opts;
     const rng = opts.rng || Math.random;
     const id = Number(stageId);
     const r = rangeOf(ps.profile);
@@ -405,7 +405,8 @@
     }
     // Retry only a note that is still in range ("Too high?" may have cut it).
     const retryable = isNum(prevTarget) && prevTarget >= r.lowMidi && prevTarget <= r.highMidi;
-    if (retryable && (lastOutcome === "miss" || (id === 4 && lastGrade === "found"))) {
+    // Stage 4 retries a "found" note once, then moves on.
+    if (retryable && (lastOutcome === "miss" || (id === 4 && lastGrade === "found" && !lastRetry))) {
       return { target: prevTarget, rescue: false, retry: true, blind: false };
     }
     return {
@@ -508,12 +509,21 @@
       tr.unclearRun = isNum(frame.rms) && frame.rms >= SCORING.unclearRms ? tr.unclearRun + dt : 0;
     }
 
+    // A capture that has drifted to another note for a second lets go, so a
+    // steady hum on the new note can lock instead of timing out as wobbly.
+    if (tr.kind === "capture" && tr.target != null && tr.hold === 0 && tr.outRun >= 1.0 - EPS) {
+      tr.target = null;
+      tr.lockT = null;
+      tr.lockBuf = [];
+      tr.outRun = 0;
+    }
     if (tr.kind === "capture" && tr.target == null && voiced) tryLock(tr, t, midi);
 
     if (tr.target != null) {
       let entry;
       if (voiced) {
-        const err = Pitch.pitchError(frame.freq, tr.target);
+        // A little hysteresis so the octave fold doesn't flip back and forth.
+        const err = Pitch.pitchError(frame.freq, tr.target, tr.lastErr && tr.lastErr.octaveSlip ? 230 : 200);
         const inBand = Math.abs(err.cents) <= spec.tol;
         const after = tr.kind === "capture" || t >= tr.runOnsetT + GRACE.ignoreOnsetSec - EPS;
         tr.lastErr = err;
@@ -567,11 +577,15 @@
     if (forced === "hit") {
       steady = voiced.filter((f) => f.t >= tr.holdStartT - EPS);
     } else {
-      const from = t - SCORING.steadyFromSec - EPS;
-      const to = t - SCORING.steadyToSec + EPS;
+      // Anchor to the end of the singing, not the deadline: most beginners
+      // sing for a couple of seconds, stop, and wait.
+      const lastV = voicedAfter.length ? voicedAfter[voicedAfter.length - 1].t + FRAME_SEC : t;
+      const end = Math.min(t, lastV);
+      const from = end - SCORING.steadyFromSec - EPS;
+      const to = end - SCORING.steadyToSec + EPS;
       steady = voicedAfter.filter((f) => f.t >= from && f.t <= to);
       if (steady.length < SCORING.minSteady) {
-        steady = voicedAfter.filter((f) => f.t >= t - SCORING.steadyFallbackSec - EPS);
+        steady = voicedAfter.filter((f) => f.t >= end - SCORING.steadyFallbackSec - EPS);
       }
     }
     const cents = steady.map((f) => f.cents);
@@ -649,9 +663,7 @@
 
   function coachHint(trial, nowT) {
     if (!trial) return null;
-    if (trial.firstVoiceT == null && nowT - trial.gateUntil >= SCORING.quietSec - EPS) {
-      return { key: "quiet", dir: 0, semis: 0, text: "Hum or sing 'oo'. I'm listening." };
-    }
+    // Unclear before quiet: fry or grit is sound, just without a pitch.
     if (trial.unclearRun >= SCORING.unclearSec - EPS) {
       return {
         key: "unclear",
@@ -659,6 +671,9 @@
         semis: 0,
         text: "I hear sound but no clear note. Use a clean 'oo' or a hum; fry and grit don't show pitch.",
       };
+    }
+    if (trial.firstVoiceT == null && nowT - trial.gateUntil >= SCORING.quietSec - EPS) {
+      return { key: "quiet", dir: 0, semis: 0, text: "Hum or sing 'oo'. I'm listening." };
     }
     if (trial.kind === "capture" && trial.target == null && trial.voicedSec >= SCORING.steadyHintSec - EPS) {
       return { key: "steady", dir: 0, semis: 0, text: "Pick one easy note and hold it still." };
@@ -858,6 +873,7 @@
         midi: m,
         name: Pitch.noteName(m),
         n: e.n,
+        hits: e.hits,
         rate: e.n >= 3 ? e.hits / e.n : null,
         bias,
         spread: enoughC ? Math.sqrt(Math.max(0, e.sumC2 / e.nC - bias * bias)) : null,

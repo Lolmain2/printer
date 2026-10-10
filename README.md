@@ -79,8 +79,28 @@ something with HTTPS (for example GitHub Pages).
 - **Check-in after each session:** "scratchy" or "pain" pauses all distortion
   stages until a healthy session. Pain shows rest advice, and about two weeks
   of bad check-ins tells you to see an ENT / laryngologist.
+- **Pitch tab, for learning to hit notes:**
+  - **Find your voice:** a 2-minute sound check (count down from 10, hold an
+    easy "oo") finds your *home note*. Every practice note is built around it,
+    in your own octave.
+  - **Explore:** sing anything and watch your voice as a line on a scrolling
+    note grid.
+  - **Train:** 4 stages, 10 tries per set.
+    1. Echo your own recorded note.
+    2. Notes near home.
+    3. Widen to an octave.
+    4. Land notes straight on, with a tightening target.
+
+  The note plays, stops, then you sing, so nothing plays while you're scored.
+  Every try ends with a verdict (how far, which direction, time to find the
+  note), and misses play "the gap" between your note and the target. Some tries
+  are blind, to check what you've really learned. The home screen tracks your
+  7-day accuracy, a day streak, a 14-day chart, and which notes you tend to
+  sing flat or sharp. It's based on the pitch-training research in
+  [RESEARCH.md](RESEARCH.md#7-learning-to-hit-notes-the-pitch-tab).
 - **Keyboard (desktop):** Space starts or pauses, ← and → move between
-  exercises, and Esc quits the session.
+  exercises, and Esc quits the session. In Pitch practice, Space replays the
+  note, S skips, P pauses auto-advance, and Esc exits.
 - **"My voice doesn't feel right. Stop now."** ends a session immediately and goes
   straight to the check-in.
 
@@ -90,8 +110,11 @@ something with HTTPS (for example GitHub Pages).
 |---|---|
 | `curriculum.js` | All exercises and stages (edit this to change the content) |
 | `progress.js` | Unlocking, safety gating, session building (pure functions) |
-| `app.js` | UI, timer, Web Audio reference tones, mic capture |
+| `app.js` | App shell, guided sessions, timer and check-ins |
 | `pitch.js` | Pitch detection (McLeod method) and note/target maths (pure functions) |
+| `pitch-trainer.js` | Pitch tab logic: home note, stages, trial scoring, adaptation, stats (pure functions) |
+| `pitch-tab.js` | Pitch tab screens and the scrolling pitch lane |
+| `audio.js` | Reference tones (incl. a voice-like "oo"), microphone frames, voice recording |
 | `desktop/main.js` | Electron shell for the desktop app (window, mic-only permission) |
 | `desktop/icon.png` | App icon |
 | `tests/` | Unit tests: `npm test` |

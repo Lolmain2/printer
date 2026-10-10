@@ -39,11 +39,11 @@
     }
 
     function resize() {
-      const r = container.getBoundingClientRect();
-      if (!r.width || !r.height) return;
+      // Content box: the border isn't part of the drawing surface.
+      if (!container.clientWidth || !container.clientHeight) return;
       dpr = Math.min(2, window.devicePixelRatio || 1);
-      W = r.width;
-      H = r.height;
+      W = container.clientWidth;
+      H = container.clientHeight;
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -205,7 +205,7 @@
           g.beginPath();
           g.arc(x, y, 5, 0, 2 * Math.PI);
           g.fill();
-          if (clip) drawChevron(x, clip, Pt.noteName(head.midi), G);
+          if (clip) drawChevron(x, clip, Pt.noteName(head.midi));
           drawTether(head, x, y, band, now, G);
         } else {
           s.farSince = null;
@@ -238,9 +238,10 @@
       }
     }
 
-    function drawChevron(x, clip, label, G) {
-      const y = clip < 0 ? 10 : H - 10;
-      const d = clip < 0 ? -1 : 1;
+    function drawChevron(x, clip, label) {
+      // clip > 0: above the view (top edge, pointing up); clip < 0: below.
+      const y = clip > 0 ? 10 : H - 10;
+      const d = clip > 0 ? -1 : 1;
       g.fillStyle = colors.text;
       g.beginPath();
       g.moveTo(x - 7, y - 4 * d);
@@ -268,7 +269,10 @@
       if (s.farSince == null) s.farSince = now;
       if (now - s.farSince < 0.8) return;
       const yHead = Math.max(4, Math.min(H - 4, y));
-      const yEdge = c < 0 ? band.bottom : band.top;
+      // Aim at the pitch the folded cents refer to (it can be an octave copy).
+      const half = (band.bottom - band.top) / 2;
+      const gy = Math.max(half, Math.min(H - half, yOf(head.midi - c / 100, G).y));
+      const yEdge = c < 0 ? gy + half : gy - half;
       const dir = yEdge < yHead ? -1 : 1;
       g.strokeStyle = colors.text;
       g.lineWidth = 1.5;
@@ -363,7 +367,7 @@
     const ps = () => getState().pitch;
     const nameOf = (m) => Pt.noteName(m);
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const plural = (n, word) => `${n} ${n === 1 ? word : word === "try" ? "tries" : `${word}s`}`;
     const centsWord = (c) => (Math.abs(c) <= 10 ? "dead on" : `${Math.abs(Math.round(c))}¢ ${c < 0 ? "flat" : "sharp"}`);
     const stageDef = (id) => PT.TRAIN_STAGES.find((st) => st.id === id);
     const clock = () => (Tones.ctx ? Tones.ctx.currentTime : 0);
@@ -446,10 +450,12 @@
     }
 
     function onFrame(f) {
-      if (lastFrameT != null && f.freq != null) voicedPending += Math.min(0.1, Math.max(0, f.t - lastFrameT));
+      // While a reference plays, whatever the mic hears isn't the user.
+      const userTurn = feedTrace && f.t >= gateUntil;
+      if (userTurn && lastFrameT != null && f.freq != null) voicedPending += Math.min(0.1, Math.max(0, f.t - lastFrameT));
       lastFrameT = f.t;
-      if (feedTrace && f.t >= gateUntil) lane.push(f.t, f.freq ? Pt.freqToMidi(f.freq) : null);
-      renderReadout(f);
+      if (userTurn) lane.push(f.t, f.freq ? Pt.freqToMidi(f.freq) : null);
+      renderReadout(userTurn ? f : { ...f, freq: null });
       if (frameHandler) frameHandler(f);
     }
 
@@ -458,19 +464,41 @@
       voicedPending = 0;
     }
 
-    async function openMic() {
+    // Opens the mic for run `id`. Returns null when listening, an error
+    // message, or STALE if the user left (or started over) while the
+    // permission prompt was up; then nothing may be touched, since the mic
+    // may already belong to a guided session.
+    const STALE = "stale";
+    async function openMic(id) {
       Tones.ensureCtx();
+      let opened;
       try {
-        await Mic.open({ echoCancellation: false });
+        opened = await Mic.open({ echoCancellation: false });
       } catch (e) {
+        if (id !== runId) return STALE;
         Mic.close();
         return e && e.name === "NotAllowedError"
           ? "Microphone access was blocked. Allow it in your browser's or Windows' microphone settings."
           : "Couldn't open the microphone.";
       }
+      if (!opened || id !== runId) return STALE;
       Mic.subscribe(onFrame);
       lastFrameT = null;
       return null;
+    }
+
+    // Reopen the mic (from a click) and then continue, e.g. after a summary.
+    async function resumeWith(fn) {
+      Tones.ensureCtx();
+      const id = runId;
+      const err = await openMic(id);
+      if (err === STALE) return;
+      if (err) {
+        goView("pitch");
+        showHomeError(err);
+        return;
+      }
+      fn();
     }
 
     // ---- Drill chrome -----------------------------------------------------
@@ -554,8 +582,8 @@
       $("d-you").textContent = nameOf(midi);
       const target = lane.target;
       if (target != null) {
-        const c = Pt.pitchError(f.freq, target).cents;
-        $("d-you-cents").textContent = Math.abs(c) <= 150 ? `${c > 0 ? "+" : c < 0 ? "−" : ""}${Math.abs(Math.round(c))}¢` : "";
+        const c = Math.round(Pt.pitchError(f.freq, target).cents);
+        $("d-you-cents").textContent = Math.abs(c) <= 150 ? `${c > 0 ? "+" : c < 0 ? "−" : ""}${Math.abs(c)}¢` : "";
       } else {
         $("d-you-cents").textContent = "";
       }
@@ -617,8 +645,10 @@
         return;
       }
       enterDrill();
+      const id = newRun();
       setInstruction("Opening the microphone…");
-      const err = await openMic();
+      const err = await openMic(id);
+      if (err === STALE) return;
       if (err) {
         goView("pitch");
         showHomeError(err);
@@ -639,7 +669,7 @@
 
     function showIntro(kind) {
       enterDrill();
-      newRun();
+      const id = newRun();
       mode = null;
       setHeader(kind === "explore" ? "Explore" : "Find your voice");
       setInstruction("Before you start");
@@ -653,7 +683,8 @@
         Tones.ensureCtx();
         setPitch({ ...ps(), settings: { ...ps().settings, introSeen: true } });
         go.disabled = true;
-        const err = await openMic();
+        const err = await openMic(id);
+        if (err === STALE) return;
         if (err) {
           go.disabled = false;
           const p = card.querySelector(".mic-error") || card.appendChild(el("p", "mic-error"));
@@ -668,23 +699,26 @@
     }
 
     function showOverlay(label, onResume) {
+      const id = runId;
       const o = $("d-overlay");
       o.innerHTML = "";
       const b = button(label, "btn-primary btn-lg", async () => {
         Tones.ensureCtx();
         b.disabled = true;
-        const err = await openMic();
+        const err = await openMic(id);
+        if (err === STALE) return;
         if (err) {
           b.disabled = false;
-          o.appendChild(el("p", "mic-error", err));
+          (o.querySelector(".mic-error") || o.appendChild(el("p", "mic-error"))).textContent = err;
           return;
         }
         if (Tones.ctx.state === "suspended") await Tones.ctx.resume();
+        if (id !== runId) return;
         o.hidden = true;
         if (!document.hidden) lane.start();
         onResume();
       });
-      o.appendChild(b);
+      o.append(b, button("Exit", "", () => goView("pitch")));
       o.hidden = false;
     }
 
@@ -693,6 +727,9 @@
     async function runSetup() {
       const id = newRun();
       mode = "setup";
+      lane.setNearest(false);
+      if (exploreState) clearTimeout(exploreState.ideaTimer);
+      exploreState = null;
       const center = baseCenter();
       lane.setView(viewAround(center, 7, 7));
       lane.setTarget(null);
@@ -784,14 +821,22 @@
       }
       if (skipBtn) skipBtn.remove();
 
-      // 4. Summary
+      // 4. Summary. Nothing to listen to here, so the mic closes.
       const home = PT.homeFromCaptures([speech, ...hums]);
       setHeader("Find your voice", "Step 4 of 4");
       feedTrace = false;
+      mode = "setup-done";
+      Mic.close();
+      flushVoiced();
+      $("d-you").textContent = "–";
+      $("d-you-cents").textContent = "";
       if (home.homeMidi == null) {
         setInstruction("I couldn't find a steady note this time.");
         msg.textContent = "Try somewhere quieter, a little closer to the mic, with a relaxed 'oo'.";
-        panel().append(button("Try again", "btn-primary", () => runSetup()), button("Done", "", () => goView("pitch")));
+        panel().append(
+          button("Try again", "btn-primary", () => resumeWith(() => runSetup())),
+          button("Done", "", () => goView("pitch")),
+        );
         return;
       }
       setPitch(PT.setHome(ps(), home.homeMidi, { captures: [speech, ...hums], now: new Date() }));
@@ -814,10 +859,9 @@
       }
       const actions = el("div", "panel-actions");
       actions.append(
-        button("Start training", "btn-primary", () => {
-          Tones.ensureCtx();
-          startSet(PT.recommendedStage(ps()) === "setup" ? 1 : PT.recommendedStage(ps()));
-        }),
+        button("Start training", "btn-primary", () =>
+          resumeWith(() => startSet(PT.recommendedStage(ps()) === "setup" ? 1 : PT.recommendedStage(ps()))),
+        ),
         button("Done", "", () => goView("pitch")),
       );
       panel().appendChild(actions);
@@ -941,6 +985,8 @@
         prevTarget: null,
         lastOutcome: null,
         lastGrade: null,
+        lastRetry: false,
+        blindOwed: false,
         autoNext: true,
         results: [],
         monotoneShown: false,
@@ -1001,8 +1047,8 @@
         const h = PT.coachHint(tr, f.t);
         if (!h) return;
         const nowMs = performance.now();
-        if (h.key !== hintKey && (h.key === "on" || h.key === "octave" || nowMs - hintAt >= 700)) {
-          hintKey = h.key;
+        if (h.text !== hintKey && (h.key === "on" || h.key === "octave" || nowMs - hintAt >= 700)) {
+          hintKey = h.text;
           hintAt = nowMs;
           setInstruction(h.text);
         }
@@ -1010,6 +1056,7 @@
       const singLine = singText(set.stageId, blind);
       setInstruction(singLine);
       replayFn = () => {
+        if (clock() < gateUntil) return; // the last replay is still playing
         const r = replay();
         if (!r) return;
         gateUntil = r.end + T.replayTailSec;
@@ -1024,12 +1071,7 @@
           setInstruction(singLine);
         }, Math.max(0, (gateUntil - clock()) * 1000));
       };
-      showControls({
-        again: true,
-        range: set.stageId > 1 && target !== homeMidi() ? (target > homeMidi() ? "high" : "low") : null,
-        skip: true,
-        pause: true,
-      });
+      showControls({ again: true, range: rangeButtonFor(target), skip: true, pause: true });
       const result = await promise;
       replayFn = null;
       hideYou = false;
@@ -1037,6 +1079,16 @@
     }
 
     let replayFn = null;
+
+    // "Too high?" / "Too low?" only appears when pressing it would really
+    // take the note out of practice (notes right next to home always stay).
+    function rangeButtonFor(target) {
+      const home = homeMidi();
+      if (set.stageId === 1 || home == null || Math.round(target) === home) return null;
+      const dir = target > home ? "high" : "low";
+      const narrowed = { ...ps(), profile: PT.adjustRange(ps().profile, target, dir) };
+      return PT.targetPool(narrowed, set.stageId).includes(Math.round(target)) ? null : dir;
+    }
 
     async function listen(id, play, label) {
       lane.setPulse(true);
@@ -1057,26 +1109,36 @@
         lastOutcome: set.lastOutcome,
         lastGrade: set.lastGrade,
         missRun: set.missRun,
+        lastRetry: set.lastRetry,
         setIndex: set.counted,
         rng,
       });
       const spec = PT.trialSpec(P0, set.stageId, { rescue: plan.rescue });
       const target = plan.target;
+      // A retry or rescue can land on a blind slot; owe that blind try to the
+      // next fresh note so blind tries still happen.
+      let blind = plan.blind;
+      if (plan.retry || plan.rescue) {
+        if (PT.isBlind(P0, set.stageId, set.counted)) set.blindOwed = true;
+      } else if (set.blindOwed) {
+        blind = true;
+        set.blindOwed = false;
+      }
       feedTrace = false;
       lane.clear();
-      lane.setBlind(plan.blind);
+      lane.setBlind(blind);
       lane.setTarget(target, spec.tol);
       setReadoutTarget(target);
       clearPanel();
-      showControls({ skip: true });
-      $("d-hold").hidden = plan.blind;
+      showControls();
+      $("d-hold").hidden = blind;
       setHold(0);
       const play = () => Tones.note(Pt.midiToFreq(target), { dur: spec.refSec, timbre: timbre() });
       const t0 = await listen(id, play, plan.rescue ? "Easy one: your home note. Listen…" : "Listen…");
       if (t0 == null) return null;
-      const result = await singPhase(id, { spec, target, t0, blind: plan.blind, replay: play });
+      const result = await singPhase(id, { spec, target, t0, blind, replay: play });
       if (!result) return null;
-      return { result, target, counted: !plan.rescue, blind: plan.blind, rescue: plan.rescue, spec };
+      return { result, target, counted: !plan.rescue, blind, rescue: plan.rescue, retry: plan.retry, spec };
     }
 
     // Stage 1: hum any note, hear your own recording, sing it back.
@@ -1106,10 +1168,15 @@
             recording = false;
           }
         }
-        let locked = false;
+        let lockedAt = null;
         const { promise } = runTrial(PT.createTrial({ kind: "capture", spec: PT.CAPTURE, t0: clock() }), (tr, f) => {
-          if (tr.target != null && !locked) {
-            locked = true;
+          // The capture can let go of a note and lock onto a new one.
+          if (tr.target == null && lockedAt != null) {
+            lockedAt = null;
+            lane.setTarget(null);
+            setReadoutTarget(null);
+          } else if (tr.target != null && lockedAt !== tr.lockT) {
+            lockedAt = tr.lockT;
             lane.setTarget(tr.target, PT.CAPTURE.tol);
             setReadoutTarget(tr.target);
             setInstruction(`That's ${nameOf(tr.target)}. Stay with it…`);
@@ -1131,9 +1198,9 @@
             if (id !== runId) return null;
             const clip = buf ? makeClip(buf, lockMidi) : null;
             if (clip) bank = [...bank.slice(-3), clip];
-            return echoPart(id, lockMidi, clip, spec);
+            return echoPart(id, lockMidi, clip, spec, true);
           }
-          return echoPart(id, lockMidi, null, spec);
+          return echoPart(id, lockMidi, null, spec, false);
         }
         Recorder.cancel();
         setInstruction(
@@ -1143,7 +1210,7 @@
       }
     }
 
-    async function echoPart(id, lockMidi, clip, spec) {
+    async function echoPart(id, lockMidi, clip, spec, recorded) {
       feedTrace = false;
       // Once the basics work, sometimes echo an earlier clip at a different note.
       let target = clip;
@@ -1155,9 +1222,10 @@
         });
         if (alt) target = alt;
       }
-      if (!target && !fallbackNoticeShown) {
+      if (!target && (!fallbackNoticeShown || recorded)) {
         fallbackNoticeShown = true;
-        toast("Couldn't record on this device. Using a voice-like tone instead.");
+        const sound = timbre() === "plain" ? "a plain tone" : "a voice-like tone";
+        toast(`${recorded ? "Couldn't get a clean clip this time" : "Couldn't record on this device"}. Using ${sound} instead.`);
       }
       set.prevClip = target;
       const targetMidi = target ? target.midi : lockMidi;
@@ -1169,7 +1237,7 @@
       lane.setTarget(targetMidi, spec.tol);
       setReadoutTarget(targetMidi);
       setHold(0);
-      const t0 = await listen(id, play, "Listen to yourself…");
+      const t0 = await listen(id, play, target ? "Listen to yourself…" : "Listen…");
       if (t0 == null) return null;
       const result = await singPhase(id, { spec, target: targetMidi, t0, blind: false, replay: play });
       if (!result) return null;
@@ -1190,13 +1258,17 @@
     // Record the result, show feedback, and pause before the next try.
     // Returns false if the run was cancelled.
     async function afterTrial(id, t) {
-      const { result, target, counted, blind } = t;
+      const { result, target, counted, blind, rescue } = t;
       feedTrace = false;
       showControls();
+      // One rescue per miss streak: whatever happens on it, carry on normally.
+      if (rescue) set.missRun = 0;
       if (result.skipped) {
+        Tones.stop(); // a "Hear it again" may still be playing
         // A skipped note shouldn't come straight back as a "retry".
         set.lastOutcome = null;
         set.lastGrade = null;
+        set.lastRetry = false;
         set.prevTarget = target;
         if (result.range) {
           const profile = PT.adjustRange(ps().profile, target, result.range);
@@ -1219,12 +1291,15 @@
         set.counted++;
         set.results.push(result);
       }
-      if (result.outcome === "miss") set.missRun++;
-      else if (!silent) set.missRun = 0;
+      if (!rescue) {
+        if (result.outcome === "miss") set.missRun++;
+        else if (!silent) set.missRun = 0;
+      }
       if (!silent) {
         set.prevTarget = target;
-        set.lastOutcome = result.outcome;
+        set.lastOutcome = rescue ? null : result.outcome; // never retry the rescue note
         set.lastGrade = result.grade || null;
+        set.lastRetry = Boolean(t.retry);
       }
       renderDots();
 
@@ -1235,9 +1310,10 @@
         lane.freeze(last + 0.06);
       }
       setHold(result.outcome === "hit" ? 1 : 0);
-      const card = renderResult(result, target);
+      const card = renderResult(result, target, t.spec.tol);
       clearPanel();
       panel().appendChild(card.node);
+      setInstruction(`${card.title}. ${card.detail}`);
 
       const mono = PT.detectMonotone(ps().recent);
       if (mono.monotone && !set.monotoneShown) {
@@ -1249,12 +1325,13 @@
 
       if (result.outcome === "miss" && result.sungMidi != null) {
         if (!(await wait(400, id))) return false;
-        await hearTheGap(id, result.sungMidi, target, card);
+        await hearTheGap(id, result.sungMidi, target, card, result.octaveSlip);
         if (!(await wait(1000, id))) return false;
       } else if (set.autoNext) {
         if (!(await wait(1500, id))) return false;
       }
       if (!set.autoNext && id === runId) {
+        setInstruction(`${card.title}. Ready when you are.`);
         const next = button("Next try", "btn-primary", () => active && active.resolve(true));
         panel().appendChild(next);
         const r = await collect(() => undefined);
@@ -1263,8 +1340,14 @@
       return id === runId;
     }
 
-    async function hearTheGap(id, sungMidi, target, card) {
+    async function hearTheGap(id, sungMidi, target, card, slipped) {
       const sung = Math.round(sungMidi);
+      // If the singer was near another octave of the note, compare with that one.
+      if (slipped) {
+        target += 12 * Math.round((sungMidi - target) / 12);
+        card.note.textContent = `Note: ${nameOf(target)}`;
+      }
+      setInstruction("Listen: your note, then the target…");
       const a = Tones.note(Pt.midiToFreq(sung), { dur: T.gapNoteSec, timbre: timbre() });
       card.you.classList.add("lit");
       if (!(await until(a.end, id))) return;
@@ -1276,7 +1359,7 @@
       card.note.classList.remove("lit");
     }
 
-    function renderResult(r, target) {
+    function renderResult(r, target, tol) {
       const node = el("div", "result-card");
       node.setAttribute("aria-live", "polite");
       let title;
@@ -1292,10 +1375,11 @@
         tone = "ok";
       } else if (r.outcome === "hit" && set.stageId === 4) {
         title = "Found it";
-        detail =
-          r.onsetCents != null
-            ? `You started ${Math.abs(Math.round(r.onsetCents))}¢ ${r.onsetCents < 0 ? "flat" : "sharp"}, then fixed it. Next: same note, land it straight on.`
-            : "You slid into it. Next: same note, land it straight on.";
+        if (r.onsetCents == null) detail = "You slid into it. Next: same note, land it straight on.";
+        else if (Math.abs(r.onsetCents) <= tol) detail = "You landed on it, then wavered. Next: same note, land it and stay.";
+        else {
+          detail = `You started ${Math.abs(Math.round(r.onsetCents))}¢ ${r.onsetCents < 0 ? "flat" : "sharp"}, then fixed it. Next: same note, land it straight on.`;
+        }
         tone = "warn";
       } else if (r.outcome === "hit") {
         title = "On the note ✓";
@@ -1303,11 +1387,18 @@
         tone = "ok";
       } else if (r.outcome === "close") {
         title = "Close";
-        detail = `${Math.abs(Math.round(r.steadyCents))}¢ ${r.steadyCents < 0 ? "flat" : "sharp"}. Almost there.`;
+        detail =
+          Math.abs(r.steadyCents) <= tol
+            ? "Right note. Hold it steady a little longer next time to count it."
+            : `${Math.abs(Math.round(r.steadyCents))}¢ ${r.steadyCents < 0 ? "flat" : "sharp"}. Almost there.`;
         tone = "warn";
       } else {
         title = "Not this time";
-        if (r.sungMidi != null) {
+        if (r.sungMidi != null && r.octaveSlip && r.steadyCents != null) {
+          const n = Math.max(1, Math.round(Math.abs(r.steadyCents) / 100));
+          const octave = r.sungMidi < target ? "lower" : "higher";
+          detail = `You were ${plural(n, "note")} ${r.steadyCents < 0 ? "below" : "above"} the note, one octave ${octave}. Aim a little ${r.steadyCents < 0 ? "higher" : "lower"}.`;
+        } else if (r.sungMidi != null) {
           const diff = target - r.sungMidi;
           const n = Math.max(1, Math.round(Math.abs(diff)));
           detail = `You were around ${nameOf(Math.round(r.sungMidi))}. The note was ${nameOf(target)}, ${plural(n, "note")} ${diff > 0 ? "higher" : "lower"}.`;
@@ -1326,11 +1417,12 @@
       const note = el("span", "chip-note", `Note: ${nameOf(target)}`);
       chips.append(you, note);
       if (r.outcome === "miss") node.appendChild(chips);
-      return { node, you, note };
+      return { node, you, note, title, detail };
     }
 
     function showSummary() {
       flushVoiced();
+      Mic.close(); // nothing to listen to on the summary
       const now = new Date();
       const P1 = ps();
       const stage = stageDef(set.stageId);
@@ -1352,7 +1444,7 @@
       if (locks.length) {
         const avg = locks.reduce((a, b) => a + b, 0) / locks.length;
         let line = `Average time to find the note: ${avg.toFixed(1)} s`;
-        if (set.lockBefore != null) line += ` (this week before: ${set.lockBefore.toFixed(1)} s)`;
+        if (set.lockBefore != null) line += ` (earlier this week: ${set.lockBefore.toFixed(1)} s)`;
         box.appendChild(el("p", "summary-line", line));
         if (!lockTipShown) {
           lockTipShown = true;
@@ -1383,12 +1475,8 @@
       const status = PT.stageStatus(P1, set.stageId);
       if (status.suggestEasier && set.stageId > 1) {
         const p = el("p", "summary-tip", "This one's tough right now. ");
-        p.appendChild(
-          button(`Practise Stage ${set.stageId - 1} for a set`, "btn-small", () => {
-            Tones.ensureCtx();
-            startSet(set.stageId - 1);
-          }),
-        );
+        const easier = set.stageId - 1;
+        p.appendChild(button(`Practise Stage ${easier} for a set`, "btn-small", () => resumeWith(() => startSet(easier))));
         box.appendChild(p);
       }
       const fatigue = PT.fatigueNotice(P1, now);
@@ -1411,10 +1499,7 @@
       const again = button(
         nextStage !== set.stageId ? `Start Stage ${nextStage}` : "Another set",
         "btn-primary btn-lg",
-        () => {
-          Tones.ensureCtx();
-          startSet(nextStage);
-        },
+        () => resumeWith(() => startSet(nextStage)),
       );
       again.id = "d-another";
       actions.append(again, button("Done", "btn-lg", () => goView("pitch")));
@@ -1491,6 +1576,7 @@
       const week = PT.weekSummary(P0, now);
       $("ps-home").textContent = home == null ? "–" : nameOf(home);
       $("ps-remeasure").hidden = home == null;
+      $("ps-remeasure").disabled = noMic;
       $("ps-rate").textContent = week.rate == null ? "–" : `${Math.round(week.rate * 100)}%`;
       $("ps-rate-sub").textContent = week.blindRate == null ? "" : `Blind tries ${Math.round(week.blindRate * 100)}%`;
       $("ps-streak").textContent = PT.dayStreak(P0, now);
@@ -1613,14 +1699,18 @@
         let tip = `${c.name}: `;
         if (!c.n) tip += "not tried yet";
         else {
-          tip += `${Math.round((c.rate != null ? c.rate : 0) * c.n)} of ${c.n} on the note`;
+          tip += `${Math.round(c.hits)} of ${Math.round(c.n)} on the note`;
           if (c.bias != null) tip += `, usually ${Math.abs(Math.round(c.bias))}¢ ${c.bias < 0 ? "flat" : "sharp"}`;
           if (c.spread != null) tip += `, spread ±${Math.round(c.spread)}¢`;
         }
         if (c.isHome) tip += " (home note)";
         chip.title = tip;
         chip.setAttribute("aria-label", tip);
+        chip.setAttribute("role", "button");
         chip.tabIndex = 0;
+        const showTip = () => ($("ph-note-detail").textContent = tip);
+        chip.addEventListener("click", showTip);
+        chip.addEventListener("focus", showTip);
         box.appendChild(chip);
       }
     }
@@ -1648,12 +1738,19 @@
     // Window hidden: stop everything, discard the current try, offer resume.
     function pause() {
       const resumeMode = mode;
-      if (!resumeMode || resumeMode === "summary") return;
+      if (!resumeMode) return;
+      // Resting screens keep their card; just make sure nothing is listening.
+      if (resumeMode === "summary" || resumeMode === "setup-done") {
+        Mic.close();
+        flushVoiced();
+        return;
+      }
       stopAudio();
       flushVoiced();
       showOverlay("Paused. Tap to resume", () => {
-        if (resumeMode === "train" && set) continueSet();
-        else startMode(resumeMode);
+        if (resumeMode === "train") {
+          if (set) continueSet();
+        } else startMode(resumeMode);
       });
     }
 
@@ -1663,16 +1760,21 @@
         goView("pitch");
         return;
       }
+      const onButton = e.target.closest && e.target.closest("button");
       if (mode === "summary" && e.key === "Enter") {
+        if (onButton) return; // a focused button activates itself
         e.preventDefault();
         const b = document.getElementById("d-another");
         if (b) b.click();
         return;
       }
-      if (e.target.closest && e.target.closest("button, input") && e.code !== "Space") return;
+      if (e.target.closest && e.target.closest("input, textarea, select")) return;
       if (e.code === "Space") {
+        // app.js swallows Space on keyup in the drill, so handle buttons here.
         e.preventDefault();
+        if (e.repeat) return;
         if (replayFn) replayFn();
+        else if (onButton) onButton.click();
       } else if (e.key === "s" || e.key === "S") {
         if (!$("d-skip").hidden) $("d-skip").click();
       } else if (e.key === "p" || e.key === "P") {

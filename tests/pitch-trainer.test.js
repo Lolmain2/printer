@@ -724,8 +724,8 @@ test("stageStatus labels and hits", () => {
   ps.stages["3"] = { passed: false, window: [1, 1, 0], tries: 3 };
   const s1 = T.stageStatus(ps, 1);
   assert.equal(s1.hits, 5);
-  assert.equal(s1.label, "4 of 5 in your last 6");
-  assert.equal(T.stageStatus(ps, 2).label, "0 of 8 needed in your last 10");
+  assert.equal(s1.label, "4 of your last 6 (need 5)");
+  assert.equal(T.stageStatus(ps, 2).label, "0 of your last 10 (need 8)");
   assert.equal(T.stageStatus(ps, 3).label, "Notes up to 4 from home (goal 6) · 2/10 this step");
   assert.equal(T.stageStatus(ps, 4).label, "Target ±35¢ (next ±25¢) · 0/10 landed");
   assert.equal(T.stageStatus({ ...ps, tolLevel: 2 }, 4).label, "Target ±25¢ · 0/10 landed");
@@ -994,4 +994,65 @@ test("defaultPitchState round-trips through normalize and JSON unchanged", () =>
   ps = feed(ps, 2, ["hit", "miss", res("close", { steadyCents: -60 })]).ps;
   ps = T.addVoicedTime(ps, 42, NOW);
   assert.deepEqual(T.normalizePitchState(JSON.parse(JSON.stringify(ps))), ps);
+});
+
+// ---- review regressions -------------------------------------------------------
+
+test("singing ~2 s and stopping is scored from the singing, not the silent end", () => {
+  // Stage 2 (8 s window): sing +80¢ from t0+0.5 for 2 s, then silence to the deadline.
+  const tr = run(match(2), [
+    ...frames({ from: 10, to: 10.5, cents: null }),
+    ...frames({ from: 10.5, to: 12.5, cents: 80 }),
+    ...frames({ from: 12.5, to: 18.2, cents: null }),
+  ]);
+  assert.equal(tr.status, "done");
+  assert.equal(tr.result.outcome, "close");
+  near(tr.result.steadyCents, 80, 1);
+  near(tr.result.sungMidi, TARGET + 0.8, 0.02);
+
+  // Far off and stopping early still reports where the singer was.
+  const far = run(match(2), [
+    ...frames({ from: 10.5, to: 12.5, cents: -300 }),
+    ...frames({ from: 12.5, to: 18.2, cents: null }),
+  ]);
+  assert.equal(far.result.outcome, "miss");
+  near(far.result.sungMidi, TARGET - 3, 0.02);
+});
+
+test("Stage 4 retries a 'found' note once, then moves on", () => {
+  const ps = withHome(50, { stages: { 1: { passed: true, window: [], tries: 0 }, 2: { passed: true, window: [], tries: 0 }, 3: { passed: true, window: [], tries: 0 }, 4: { passed: false, window: [], tries: 0 } } });
+  const rng = T.mulberry32(3);
+  const first = T.nextTrialPlan(ps, 4, { prevTarget: 53, lastOutcome: "hit", lastGrade: "found", missRun: 0, setIndex: 1, rng });
+  assert.equal(first.retry, true);
+  assert.equal(first.target, 53);
+  const second = T.nextTrialPlan(ps, 4, { prevTarget: 53, lastOutcome: "hit", lastGrade: "found", lastRetry: true, missRun: 0, setIndex: 2, rng });
+  assert.equal(second.retry, false);
+  assert.notEqual(second.target, 53);
+});
+
+test("a capture that drifts to another note lets go and re-locks", () => {
+  // Hum D3 (lock), breathe, then hold E3 (+200¢) steadily.
+  const tr = run(capture(0), [
+    ...frames({ from: 0, to: 1.0, cents: 0 }),
+    ...frames({ from: 1.0, to: 1.5, cents: null }),
+    ...frames({ from: 1.5, to: 6.0, cents: 200 }),
+  ]);
+  assert.equal(tr.status, "done");
+  assert.equal(tr.result.outcome, "hit");
+  near(tr.result.target, TARGET + 2, 0.01);
+  assert.ok(tr.result.endT < 5.0, `expected a hit within ~4.3 s, got ${tr.result.endT}`);
+});
+
+test("coachHint says 'unclear' for pitchless sound even before any voiced frame", () => {
+  const tr = run(match(2), frames({ from: 10, to: 14, cents: null, rms: 0.05 }));
+  assert.equal(T.coachHint(tr, 14).key, "unclear");
+  const quiet = run(match(2), frames({ from: 10, to: 14, cents: null }));
+  assert.equal(T.coachHint(quiet, 14).key, "quiet");
+});
+
+test("noteChips report raw hit counts for honest tooltips", () => {
+  const ps = withHome(50, { notes: { 50: { n: 20.5, hits: 15, nC: 0, sumC: 0, sumC2: 0 } } });
+  const chip = T.noteChips(ps).find((c) => c.midi === 50);
+  assert.equal(chip.hits, 15);
+  assert.equal(Math.round(chip.n), 21);
 });

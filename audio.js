@@ -230,7 +230,8 @@
     },
 
     // Calls are queued so overlapping opens (a double click, a reopen with
-    // other constraints) can't race each other.
+    // other constraints) can't race each other. Resolves true when the mic is
+    // open, false when a close() cancelled this open while it was waiting.
     open(opts = {}) {
       const generation = this.generation;
       const p = this.queue.then(() => this.connect(opts, generation));
@@ -239,8 +240,8 @@
     },
 
     async connect({ echoCancellation = true } = {}, generation) {
-      if (generation !== this.generation) return; // closed before its turn
-      if (this.stream && this.echoCancellation === echoCancellation) return;
+      if (generation !== this.generation) return false; // closed before its turn
+      if (this.stream && this.echoCancellation === echoCancellation) return true;
       const ctx = Tones.ensureCtx();
       if (!ctx) throw new Error("Web Audio is not supported");
       this.release(); // different constraints: reopen, keeping listeners
@@ -252,7 +253,7 @@
       if (generation !== this.generation) {
         // close() ran while the permission prompt was up.
         stream.getTracks().forEach((t) => t.stop());
-        return;
+        return false;
       }
       this.stream = stream;
       this.echoCancellation = echoCancellation;
@@ -262,6 +263,7 @@
       this.buf = new Float32Array(this.analyser.fftSize);
       this.source.connect(this.analyser);
       this.recent = [];
+      return true;
     },
 
     // Adding the same fn twice is a no-op, so it can't be fed (and score)
