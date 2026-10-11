@@ -49,15 +49,11 @@ jobs:
           npm version "$base.${{ github.run_number }}" --no-git-tag-version --allow-same-version
           echo "VERSION=$base.${{ github.run_number }}" >> "$GITHUB_ENV"
 
-      # On the default branch the installer, its blockmap and latest.yml go up
-      # to a *draft* release, which the updater can't see while files upload.
       - name: Build installer
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false" # no code-signing certificate
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EP_DRAFT: "true"
-        run: npx electron-builder --win nsis --x64 --publish "$([ "$PUBLISH" = true ] && echo always || echo never)"
+        run: npx electron-builder --win nsis --x64 --publish never
 
       - name: Upload build artifact
         if: always()
@@ -66,16 +62,26 @@ jobs:
           name: ScreamCoach-windows-installer
           path: |
             dist/*.exe
+            dist/*.blockmap
             dist/latest.yml
 
-      # Everything is uploaded: make it the latest release, but only if it's
-      # newer than the current one (a re-run of an old build must not win).
+      # One release with all three files, published only once they're all up
+      # (gh uploads to a draft first), and only if it's newer than the current
+      # latest release (a re-run of an old build must not win). Publishing is
+      # done here rather than by electron-builder, whose parallel uploads each
+      # created their own draft and split the files between them.
       - name: Publish release
         if: env.PUBLISH == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          files=("dist/ScreamCoach-Setup-$VERSION.exe" "dist/ScreamCoach-Setup-$VERSION.exe.blockmap" dist/latest.yml)
+          for f in "${files[@]}"; do
+            [ -f "$f" ] || { echo "::error::$f is missing"; exit 1; }
+          done
+          grep -q "^version: $VERSION$" dist/latest.yml || { echo "::error::latest.yml is not for $VERSION"; exit 1; }
+
           latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
           if [ -n "$latest" ] && ! node -e '
             const a = process.argv[1].split(".").map(Number);
@@ -83,8 +89,15 @@ jobs:
             for (let i = 0; i < 3; i++) if (a[i] !== b[i]) process.exit(a[i] > b[i] ? 0 : 1);
             process.exit(1);
           ' "$VERSION" "$latest"; then
-            echo "v$VERSION is not newer than $latest; leaving it as a draft."
+            echo "v$VERSION is not newer than $latest; not publishing."
             exit 0
           fi
-          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --target "$GITHUB_SHA" --latest
+
+          # Drafts are never used for updates; drop leftovers from failed runs.
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | select(.draft) | .id'); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+          done
+
+          gh release create "v$VERSION" "${files[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Scream Coach $VERSION" --notes "Install once with ScreamCoach-Setup-$VERSION.exe; installed copies update automatically." --latest
           echo "Published v$VERSION."
