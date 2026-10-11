@@ -5,36 +5,47 @@ step by step toward vocal fry, fry screams, false cord screams, highs and lows.
 The curriculum and safety rules are based on the research in
 [RESEARCH.md](RESEARCH.md).
 
-## Desktop app (Windows .exe)
+## Desktop app (Windows)
 
-`ScreamCoach.exe` is a single portable file. There's nothing to install, just
-double-click it.
+**Install once, then it updates itself.**
 
-**Getting the exe:** GitHub builds it on every push (or click **Run
-workflow** on the Actions page to build it on demand). Open the repo's **Actions** tab, then the latest **Build Scream Coach
-exe** run, and download **ScreamCoach-windows-exe** under *Artifacts*. It comes
-as a zip, so unzip it to get `ScreamCoach.exe`. Pushing a tag such as
-`coach-v1.0.0` also attaches the exe to a GitHub Release.
+1. Download `ScreamCoach-Setup-<version>.exe` from the
+   [latest release](https://github.com/Lolmain2/printer/releases/latest).
+2. Run it. It installs just for you, with no admin rights needed, and adds
+   Start menu and desktop shortcuts.
 
-**First launch:**
-- The exe isn't code-signed, so Windows SmartScreen may say "Windows protected
-  your PC". Click **More info → Run anyway**.
-- It takes a few seconds to open because the portable exe unpacks itself
-  first.
+**Updates:** the app checks for updates when it starts and every 4 hours, and
+downloads them in the background. When one is ready, a banner offers
+**Restart now**. It never restarts by itself, and the banner stays out of the
+way during sessions. If you don't restart, the update installs the next time
+you close the app. Settings → App updates shows your version, with a
+**Check now** button.
+
+**First install:**
+- The installer isn't code-signed, so Windows SmartScreen may say "Windows
+  protected your PC". Click **More info → Run anyway**.
+- **If you used the old portable `ScreamCoach.exe`:** close it before
+  installing, then delete it and start Scream Coach from the Start menu.
+  Your progress carries over.
 - For the pitch check, Windows has to allow desktop apps to use the mic:
   **Settings → Privacy & security → Microphone → Let desktop apps access your
   microphone**.
 
-Progress is saved in `%APPDATA%\Scream Coach`, so it survives moving or
-replacing the exe.
+Progress is saved in `%APPDATA%\Scream Coach`. It survives updates, and
+uninstalling keeps it.
+
+**How releases are made:** every push to the main (default) branch builds the
+installer on GitHub and publishes it as release `v1.1.<build number>`. Installed
+apps pick that up. Pushes to other branches only build the installer, which you
+can download from the run's **Artifacts** (`ScreamCoach-windows-installer`).
 
 **Building it yourself** (Node 22):
 
 ```
 npm install
-npm start        # run the desktop app
+npm start        # run the desktop app from source (updates are off)
 npm test         # unit tests
-npm run dist     # build dist/ScreamCoach.exe (works on Windows and Linux)
+npm run dist     # build dist/ScreamCoach-Setup-<version>.exe (Windows, or Linux with wine)
 ```
 
 ## Running in a browser
@@ -126,7 +137,10 @@ something with HTTPS (for example GitHub Pages).
 | `pitch-tab.js` | Pitch tab screens and the scrolling pitch lane |
 | `audio.js` | Reference tones (incl. a voice-like "oo"), microphone frames, voice recording, device switching |
 | `devices.js` | Mic/output device lists and matching a saved choice to what's plugged in (pure functions) |
-| `desktop/main.js` | Electron shell for the desktop app (window, mic-only permission) |
+| `desktop/main.js` | Electron shell for the desktop app (window, mic and output permissions only) |
+| `desktop/updater.js` | Automatic updates from GitHub Releases |
+| `desktop/preload.js` | Exposes only the update status/actions to the page (`window.desktop`) |
+| `updates.js` | Update status text for Settings and the banner (pure functions) |
 | `desktop/icon.png` | App icon |
 | `tests/` | Unit tests: `npm test` |
 

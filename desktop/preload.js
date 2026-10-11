@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld("desktop", {
   getUpdate: () => ipcRenderer.invoke("update:get"),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
-  openReleases: () => ipcRenderer.invoke("update:releases"),
   onUpdate(callback) {
     const handler = (_event, status) => callback(status);
     ipcRenderer.on("update:status", handler);

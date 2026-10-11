@@ -3,6 +3,10 @@ name: Build Scream Coach exe
 # Every push builds the Windows installer. Pushes to the default branch also
 # publish it as a GitHub Release (vX.Y.<run number>), which installed copies
 # of the app pick up through auto-update.
+#
+# Versions come from run_number, which restarts at 1 if this file is renamed
+# or recreated: bump the X.Y in package.json then, or installed apps would see
+# every new release as older than what they have.
 on:
   push:
     branches: ["**"]
@@ -11,6 +15,12 @@ on:
 
 permissions:
   contents: write # create releases
+
+# One build per branch at a time, in push order, so releases can't overtake
+# each other.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -37,19 +47,44 @@ jobs:
         run: |
           base=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
           npm version "$base.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+          echo "VERSION=$base.${{ github.run_number }}" >> "$GITHUB_ENV"
 
-      - name: Build installer (and publish the release on the default branch)
+      # On the default branch the installer, its blockmap and latest.yml go up
+      # to a *draft* release, which the updater can't see while files upload.
+      - name: Build installer
         shell: bash
-        # No code-signing certificate: skip signing instead of searching for one.
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false" # no code-signing certificate
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_DRAFT: "true"
         run: npx electron-builder --win nsis --x64 --publish "$([ "$PUBLISH" = true ] && echo always || echo never)"
 
       - name: Upload build artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ScreamCoach-windows-installer
           path: |
             dist/*.exe
             dist/latest.yml
+
+      # Everything is uploaded: make it the latest release, but only if it's
+      # newer than the current one (a re-run of an old build must not win).
+      - name: Publish release
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || true)
+          if [ -n "$latest" ] && ! node -e '
+            const a = process.argv[1].split(".").map(Number);
+            const b = process.argv[2].replace(/^v/, "").split(".").map(Number);
+            for (let i = 0; i < 3; i++) if (a[i] !== b[i]) process.exit(a[i] > b[i] ? 0 : 1);
+            process.exit(1);
+          ' "$VERSION" "$latest"; then
+            echo "v$VERSION is not newer than $latest; leaving it as a draft."
+            exit 0
+          fi
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --target "$GITHUB_SHA" --latest
+          echo "Published v$VERSION."

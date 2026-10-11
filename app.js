@@ -867,7 +867,7 @@
     $("update-line").textContent = v.line;
     const btn = $("update-btn");
     btn.hidden = !v.action;
-    btn.textContent = { install: "Restart to update", download: "Get the installer", check: "Check now" }[v.action] || "";
+    btn.textContent = { install: "Restart to update", check: "Check now" }[v.action] || "";
     btn.classList.toggle("btn-primary", v.action === "install");
     $("update-banner").hidden = !v.banner || updateBannerDismissed;
     $("update-banner-text").textContent = `Scream Coach ${updateStatus.version} is ready to install.`;
@@ -885,7 +885,6 @@
     $("update-btn").addEventListener("click", () => {
       const action = window.Updates.updateView(updateStatus).action;
       if (action === "install") desktop.installUpdate();
-      else if (action === "download") desktop.openReleases();
       else desktop.checkForUpdates();
     });
     $("update-restart").addEventListener("click", () => desktop.installUpdate());

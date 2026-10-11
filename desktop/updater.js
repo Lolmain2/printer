@@ -2,9 +2,8 @@
 // Releases (published by the CI build on every push to the main branch).
 // Updates download in the background; installing waits for the user to
 // restart, or happens when they next close the app.
-const { app, ipcMain, shell } = require("electron");
+const { app, ipcMain } = require("electron");
 
-const RELEASES_URL = "https://github.com/Lolmain2/printer/releases/latest";
 const FIRST_CHECK_MS = 5 * 1000;
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
@@ -18,12 +17,10 @@ function setupUpdates(getWindow) {
   };
 
   ipcMain.handle("update:get", () => withVersion(status));
-  ipcMain.handle("update:releases", () => shell.openExternal(RELEASES_URL));
 
-  // The portable exe and a run from source (npm start) can't update themselves.
-  const fixed = process.env.PORTABLE_EXECUTABLE_FILE ? "portable" : !app.isPackaged ? "dev" : null;
-  if (fixed) {
-    status = { state: fixed };
+  // A run from source (npm start) has nothing to update.
+  if (!app.isPackaged) {
+    status = { state: "dev" };
     ipcMain.handle("update:check", () => withVersion(status));
     ipcMain.handle("update:install", () => false);
     return;
@@ -44,7 +41,9 @@ function setupUpdates(getWindow) {
   autoUpdater.on("update-downloaded", (info) => send({ state: "ready", version: info.version }));
   autoUpdater.on("error", (err) => {
     // A failed later check shouldn't hide an update that's already downloaded.
-    if (status.state !== "ready") send({ state: "error", message: String((err && err.message) || err) });
+    if (status.state === "ready") return;
+    const phase = status.state === "downloading" ? "download" : "check";
+    send({ state: "error", phase, version: status.version, message: String((err && err.message) || err) });
   });
 
   let checking = false;
@@ -62,8 +61,11 @@ function setupUpdates(getWindow) {
   }
 
   ipcMain.handle("update:check", () => check());
+  let installing = false; // a double click must not start two installers
   ipcMain.handle("update:install", () => {
     if (status.state !== "ready") return false;
+    if (installing) return true;
+    installing = true;
     // Silent install, then start the new version.
     setImmediate(() => autoUpdater.quitAndInstall(true, true));
     return true;
