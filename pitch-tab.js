@@ -357,7 +357,7 @@
   // ---- Controller -------------------------------------------------------
 
   function create(deps) {
-    const { $, el, icon, show, goView, getState, setPitch, setRange, renderAdvice, safetyAdvice, RANGES } = deps;
+    const { $, el, icon, show, goView, getState, setPitch, setRange, renderAdvice, safetyAdvice, deviceSummary, RANGES } = deps;
     const { Tones, Mic, Recorder } = window.Sound;
     const PT = window.PitchTrainer;
     const Pt = window.Pitch;
@@ -484,6 +484,7 @@
       if (!opened || id !== runId) return STALE;
       Mic.subscribe(onFrame);
       lastFrameT = null;
+      if (Mic.fellBack) toast("Your chosen mic isn't connected, so the system default is listening.");
       return null;
     }
 
@@ -1588,6 +1589,7 @@
       for (const b of $("ph-timbre").querySelectorAll("button")) {
         b.setAttribute("aria-checked", String(b.dataset.timbre === P0.settings.timbre));
       }
+      $("ph-devices").textContent = deviceSummary();
     }
 
     // 14 columns: bar height = share of tries on the note that day.
@@ -1794,6 +1796,7 @@
       $("d-pause").textContent = set.autoNext ? "Pause auto-next" : "Resume auto-next";
     });
     $("ps-remeasure").addEventListener("click", () => begin("setup"));
+    $("ph-devices-change").addEventListener("click", () => goView("settings"));
     for (const b of $("ph-timbre").querySelectorAll("button")) {
       b.addEventListener("click", () => {
         setPitch({ ...ps(), settings: { ...ps().settings, timbre: b.dataset.timbre } });

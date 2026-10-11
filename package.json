@@ -27,6 +27,7 @@
       "curriculum.js",
       "progress.js",
       "pitch.js",
+      "devices.js",
       "pitch-trainer.js",
       "audio.js",
       "pitch-tab.js",

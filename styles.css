@@ -221,6 +221,28 @@ button:focus-visible, .switch input:focus-visible + span { outline: 2px solid va
 .rules li { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; color: var(--muted); }
 .rules strong { color: var(--text); display: block; margin-bottom: 2px; }
 
+.section-title.first { margin-top: 0; }
+.device-row {
+  display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 1.4fr); gap: 8px 20px; align-items: center;
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.device-row label { display: flex; flex-direction: column; }
+.device-name { font-weight: 650; }
+.device-control { display: flex; gap: 8px; min-width: 0; }
+.select {
+  flex: 1; min-width: 0; min-height: 40px; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); color: var(--text); font: inherit;
+}
+.select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.device-meter { grid-column: 2; display: grid; gap: 4px; }
+.device-meter .level-bar { margin: 4px 0 0; }
+.device-meter .level-bar span { background: var(--ok); }
+.device-status { min-height: 1.4em; margin: 10px 0 0; font-size: 0.9rem; color: var(--warn); }
+.device-status:empty { display: none; }
+.device-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 12px 0 0; }
+.device-summary .link-btn { margin-top: 0; }
+
 .setting {
   display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
   padding: 18px 0; border-bottom: 1px solid var(--border);
@@ -474,5 +496,8 @@ button:focus-visible, .switch input:focus-visible + span { outline: 2px solid va
   .drill-console .pitch-row { justify-content: space-between; }
   .session-bar .icon-btn { width: 44px; height: 44px; }
   .btn-small, .link-btn, .segmented button { min-height: 44px; }
+  .device-row { grid-template-columns: 1fr; }
+  .device-meter { grid-column: 1; }
+  .select, .device-control .btn { min-height: 44px; }
   .how summary { padding: 11px 0; }
 }

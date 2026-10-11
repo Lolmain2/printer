@@ -17,15 +17,43 @@
     nodes: [],
     targets: [], // what the singer should be on, for the pitch check
     muted: false, // reference tones can be silenced while targets keep running
+    sinkId: "", // chosen output device; "" = system default
+    onOutputLost: null, // called when the chosen output can't be used
 
     ensureCtx() {
       if (!this.ctx) {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return null;
         this.ctx = new AC();
+        if (this.sinkId) this.setOutput(this.sinkId);
       }
       if (this.ctx.state === "suspended") this.ctx.resume();
       return this.ctx;
+    },
+
+    canChooseOutput() {
+      const AC = window.AudioContext;
+      return Boolean(AC && typeof AC.prototype.setSinkId === "function");
+    },
+
+    // Send all app sound to an output device ("" = system default). Resolves
+    // true on success; on failure it goes back to the default.
+    async setOutput(id) {
+      this.sinkId = id || "";
+      if (!this.ctx || !this.canChooseOutput()) return !this.sinkId || this.canChooseOutput();
+      try {
+        await this.ctx.setSinkId(this.sinkId);
+        return true;
+      } catch (e) {
+        this.sinkId = "";
+        try {
+          await this.ctx.setSinkId("");
+        } catch (e2) {
+          /* already on the default */
+        }
+        if (this.onOutputLost) this.onOutputLost(e);
+        return false;
+      }
     },
 
     // One note (or siren, with endFreq) with a short attack/release so it
@@ -224,6 +252,9 @@
     listeners: new Set(),
     queue: Promise.resolve(),
     generation: 0, // bumped by close(), so an open in flight knows to give up
+    deviceId: "", // chosen microphone; "" = system default
+    openDeviceId: null, // the choice the open stream was made for
+    fellBack: false, // the chosen mic wasn't available, so the default is in use
 
     supported() {
       return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -241,15 +272,27 @@
 
     async connect({ echoCancellation = true } = {}, generation) {
       if (generation !== this.generation) return false; // closed before its turn
-      if (this.stream && this.echoCancellation === echoCancellation) return true;
+      if (this.stream && this.echoCancellation === echoCancellation && this.openDeviceId === this.deviceId) return true;
       const ctx = Tones.ensureCtx();
       if (!ctx) throw new Error("Web Audio is not supported");
       this.release(); // different constraints: reopen, keeping listeners
       // Echo cancellation helps keep the reference tone out of the mic;
       // noise suppression and auto gain mangle sung notes, so they're off.
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation, noiseSuppression: false, autoGainControl: false },
-      });
+      const base = { echoCancellation, noiseSuppression: false, autoGainControl: false };
+      const wanted = this.deviceId;
+      let stream;
+      let fellBack = false;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: wanted ? { ...base, deviceId: { exact: wanted } } : base,
+        });
+      } catch (e) {
+        // The chosen mic is unplugged or renamed: use the default instead.
+        if (!wanted || !e || (e.name !== "OverconstrainedError" && e.name !== "NotFoundError")) throw e;
+        if (generation !== this.generation) return false;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: base });
+        fellBack = true;
+      }
       if (generation !== this.generation) {
         // close() ran while the permission prompt was up.
         stream.getTracks().forEach((t) => t.stop());
@@ -257,6 +300,17 @@
       }
       this.stream = stream;
       this.echoCancellation = echoCancellation;
+      this.openDeviceId = wanted;
+      this.fellBack = fellBack;
+      // Unplugged mid-use: reopen (falling back to the default), keeping listeners.
+      const track = stream.getAudioTracks()[0];
+      if (track) {
+        track.addEventListener("ended", () => {
+          if (this.stream !== stream) return;
+          this.release();
+          this.open({ echoCancellation }).catch(() => {});
+        });
+      }
       this.source = ctx.createMediaStreamSource(stream);
       this.analyser = ctx.createAnalyser();
       this.analyser.fftSize = 2048;
@@ -309,11 +363,20 @@
     },
 
     // Drop the stream and audio nodes but keep listeners and the interval.
+    // Switch microphones. An open mic reopens on the new one, keeping its
+    // listeners; resolves like open().
+    async setDevice(id) {
+      this.deviceId = id || "";
+      if (!this.stream) return true;
+      return this.open({ echoCancellation: this.echoCancellation });
+    },
+
     release() {
       if (this.source) this.source.disconnect();
       if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
       this.stream = this.source = this.analyser = this.buf = null;
       this.echoCancellation = null;
+      this.openDeviceId = null;
       this.recent = [];
     },
 

@@ -16,8 +16,9 @@
     } catch (e) {
       /* storage unavailable or corrupt: start fresh */
     }
-    // Shallow merge isn't enough for the nested pitch-training state.
+    // Shallow merge isn't enough for the nested pitch-training and device state.
     s.pitch = window.PitchTrainer.normalizePitchState(s.pitch);
+    s.audio = window.Devices.normalizeAudioSettings(s.audio);
     return s;
   }
 
@@ -33,6 +34,8 @@
 
   // Reference tones and microphone capture live in audio.js.
   const { Tones, Mic } = window.Sound;
+  Mic.deviceId = state.audio.input.id;
+  Tones.sinkId = state.audio.output.id;
 
   const STATUS_TEXT = {
     on: "On the note ✓",
@@ -130,6 +133,10 @@
       const opened = await Mic.open();
       if (!opened || !session || !state.mic) return;
       Mic.subscribe(pitchTick);
+      if (Mic.fellBack) {
+        $("mic-error").hidden = false;
+        $("mic-error").textContent = `${window.Devices.choiceLabel(state.audio.input)} isn't connected, so the system default mic is listening.`;
+      }
     } catch (e) {
       if (!session) return; // ended while waiting; the mic may belong to someone else now
       Mic.close();
@@ -321,10 +328,157 @@
       box.appendChild(b);
     }
     $("mic-default").checked = Boolean(state.mic);
+    renderDevices();
+  }
+
+  // ---- Audio devices -----------------------------------------------------
+
+  const Dev = window.Devices;
+  let micTest = null;
+  let devOptions = { ins: [], outs: [] };
+
+  async function listDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+    try {
+      return await navigator.mediaDevices.enumerateDevices();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function setDevStatus(text) {
+    $("dev-status").textContent = text || "";
+  }
+
+  // Match the saved choices to what's plugged in now. A missing device stays
+  // saved (it's used again when it's back); meanwhile the default plays/listens.
+  function reconcileDevices(ins, outs) {
+    const notes = [];
+    const labelOf = (list, id) => {
+      const o = list.find((x) => x.id === id);
+      return o && o.named ? o.label : "";
+    };
+    const i = Dev.resolveChoice(ins, state.audio.input);
+    if (i.missing) {
+      notes.push(`${Dev.choiceLabel(state.audio.input)} isn't connected. The system default mic is used until it's back.`);
+    } else if (i.id !== state.audio.input.id) {
+      state.audio.input = { id: i.id, label: labelOf(ins, i.id) };
+      saveState();
+      Mic.setDevice(i.id).catch(() => {});
+    }
+    const o = Dev.resolveChoice(outs, state.audio.output);
+    if (o.missing) {
+      notes.push(`${Dev.choiceLabel(state.audio.output)} isn't connected. Sound plays on the system default until it's back.`);
+      if (Tones.sinkId) Tones.setOutput("");
+    } else {
+      if (o.id !== state.audio.output.id) {
+        state.audio.output = { id: o.id, label: labelOf(outs, o.id) };
+        saveState();
+      }
+      if (Tones.sinkId !== o.id) Tones.setOutput(o.id);
+    }
+    return notes;
+  }
+
+  function fillSelect(sel, options, current, defName) {
+    sel.innerHTML = "";
+    const def = el("option", null, defName ? `System default (${defName})` : "System default");
+    def.value = "";
+    sel.appendChild(def);
+    for (const o of options) {
+      const op = el("option", null, o.label);
+      op.value = o.id;
+      sel.appendChild(op);
+    }
+    // A saved device that isn't listed right now still shows as chosen.
+    if (current.id && !options.some((o) => o.id === current.id)) {
+      const op = el("option", null, `${Dev.choiceLabel(current)} (not connected)`);
+      op.value = current.id;
+      sel.appendChild(op);
+    }
+    sel.value = current.id;
+  }
+
+  async function renderDevices() {
+    const devices = await listDevices();
+    const ins = Dev.deviceOptions(devices, "audioinput");
+    const outs = Dev.deviceOptions(devices, "audiooutput");
+    devOptions = { ins, outs };
+    const notes = reconcileDevices(ins, outs);
+    fillSelect($("dev-input"), ins, state.audio.input, Dev.defaultName(devices, "audioinput"));
+    const canOut = Tones.canChooseOutput();
+    $("dev-output-row").hidden = !canOut;
+    $("dev-output-unsupported").hidden = canOut;
+    if (canOut) fillSelect($("dev-output"), outs, state.audio.output, Dev.defaultName(devices, "audiooutput"));
+    const micOk = Mic.supported();
+    $("dev-input").disabled = !micOk;
+    $("dev-test-input").disabled = !micOk;
+    const note = $("dev-note");
+    note.innerHTML = "";
+    if (!micOk) {
+      note.textContent = "The microphone needs the page to be opened over https:// (or localhost), or the desktop app.";
+    } else if (!ins.some((o) => o.named)) {
+      note.append("Device names show up once the app is allowed to use the microphone. ");
+      const show = el("button", "link-btn", "Allow and show names");
+      show.type = "button";
+      show.addEventListener("click", () => startMicTest());
+      note.appendChild(show);
+    }
+    note.hidden = !note.textContent;
+    if (notes.length) setDevStatus(notes.join(" "));
+  }
+
+  async function startMicTest() {
+    if (micTest) return;
+    Tones.ensureCtx();
+    let opened;
+    try {
+      opened = await Mic.open();
+    } catch (e) {
+      setDevStatus(
+        e && e.name === "NotAllowedError"
+          ? "Microphone access was blocked. Allow it in your browser's or Windows' microphone settings."
+          : "Couldn't open the microphone.",
+      );
+      return;
+    }
+    if (!opened) return;
+    if (view !== "settings") {
+      Mic.close();
+      return;
+    }
+    micTest = (f) => {
+      $("dev-level").style.width = `${Math.round(100 * Math.min(1, f.rms / 0.1))}%`;
+      $("dev-heard").textContent = f.freq ? `Hearing ${window.Pitch.noteName(window.Pitch.freqToMidi(f.freq))}` : "Say or hum something…";
+    };
+    Mic.subscribe(micTest);
+    $("dev-meter").hidden = false;
+    $("dev-test-input").textContent = "Stop test";
+    setDevStatus(Mic.fellBack ? `${Dev.choiceLabel(state.audio.input)} isn't connected, so the system default mic is listening.` : "");
+    renderDevices(); // names are visible now that the mic is allowed
+  }
+
+  function stopMicTest() {
+    if (!micTest) return;
+    micTest = null;
+    Mic.close();
+    $("dev-meter").hidden = true;
+    $("dev-test-input").textContent = "Test mic";
+  }
+
+  function chosenLabel(list, sel) {
+    const o = list.find((x) => x.id === sel.value);
+    return o && o.named ? o.label : "";
+  }
+
+  // Shown on the Pitch tab.
+  function deviceSummary() {
+    return `Mic: ${Dev.choiceLabel(state.audio.input)} · Output: ${Dev.choiceLabel(state.audio.output)}`;
   }
 
   function goView(v) {
     if ((view === "pitch" || view === "drill") && v !== view) pitchTab.leave();
+    if (view === "settings" && v !== "settings") stopMicTest();
     if (v === "pitch") pitchTab.render();
     if (v === "practice") renderPractice();
     if (v === "progress") renderProgress();
@@ -514,6 +668,7 @@
     },
     renderAdvice,
     safetyAdvice: () => P.safetyAdvice(state),
+    deviceSummary,
     RANGES,
   });
 
@@ -539,10 +694,54 @@
     saveState();
   });
   $("stop-btn").addEventListener("click", finishSession);
+  $("dev-test-input").addEventListener("click", () => (micTest ? stopMicTest() : startMicTest()));
+  $("dev-input").addEventListener("change", async (e) => {
+    const id = e.target.value;
+    state.audio.input = { id, label: chosenLabel(devOptions.ins, e.target) };
+    saveState();
+    setDevStatus("");
+    try {
+      await Mic.setDevice(id);
+    } catch (err) {
+      setDevStatus("Couldn't open that microphone.");
+      return;
+    }
+    if (Mic.stream && Mic.fellBack) setDevStatus("That microphone isn't available, so the system default is listening.");
+  });
+  $("dev-output").addEventListener("change", async (e) => {
+    const id = e.target.value;
+    state.audio.output = { id, label: chosenLabel(devOptions.outs, e.target) };
+    saveState();
+    setDevStatus("");
+    Tones.ensureCtx();
+    const ok = await Tones.setOutput(id);
+    if (!ok) setDevStatus("Couldn't switch to that output, so sound plays on the system default.");
+    else playTestTone();
+  });
+  $("dev-test-output").addEventListener("click", async () => {
+    Tones.ensureCtx();
+    await Tones.setOutput(Tones.sinkId);
+    playTestTone();
+  });
+  function playTestTone() {
+    Tones.note(window.Pitch.midiToFreq(57), { dur: 0.9, timbre: "voice-low" });
+  }
+  Tones.onOutputLost = () => {
+    if (view === "settings") setDevStatus("Couldn't use the chosen output, so sound plays on the system default.");
+  };
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", async () => {
+      if (view === "settings") renderDevices();
+      else {
+        const devices = await listDevices();
+        reconcileDevices(Dev.deviceOptions(devices, "audioinput"), Dev.deviceOptions(devices, "audiooutput"));
+      }
+    });
+  }
   $("quit-btn").addEventListener("click", quitSession);
   $("reset-btn").addEventListener("click", () => {
     if (!confirm("Delete all progress, history and pitch training?")) return;
-    state = { ...P.defaultState(), pitch: window.PitchTrainer.defaultPitchState() };
+    state = { ...P.defaultState(), pitch: window.PitchTrainer.defaultPitchState(), audio: state.audio };
     selectedStage = null;
     saveState();
     renderSettings();

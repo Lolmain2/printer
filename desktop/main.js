@@ -42,12 +42,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  // The pitch check needs the microphone; nothing else is ever granted.
+  // The pitch check needs the microphone, and choosing speakers/headphones
+  // needs "speaker-selection"; nothing else is ever granted.
   const audioOnly = (details) => !details.mediaTypes || details.mediaTypes.every((t) => t === "audio");
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
-    callback(permission === "media" && audioOnly(details));
+    callback((permission === "media" && audioOnly(details)) || permission === "speaker-selection");
   });
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
+  session.defaultSession.setPermissionCheckHandler(
+    (_wc, permission) => permission === "media" || permission === "speaker-selection",
+  );
   createWindow();
 });
 

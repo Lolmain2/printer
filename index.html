@@ -122,6 +122,10 @@
             <button type="button" role="radio" data-timbre="plain">Plain tone</button>
           </div>
         </div>
+        <p class="device-summary muted small">
+          <span id="ph-devices"></span>
+          <button id="ph-devices-change" class="link-btn" type="button">Change</button>
+        </p>
         <details class="how">
           <summary>How this works</summary>
           <div id="ph-how"></div>
@@ -197,6 +201,37 @@
       <!-- Settings -->
       <section id="view-settings" class="view" hidden>
         <h1 class="page-title">Settings</h1>
+
+        <h2 class="section-title first">Audio devices</h2>
+        <p id="dev-note" class="muted small" hidden></p>
+        <div class="device-row">
+          <label for="dev-input">
+            <span class="device-name">Microphone</span>
+            <span class="muted small">Used by the pitch check and the Pitch tab.</span>
+          </label>
+          <div class="device-control">
+            <select id="dev-input" class="select"></select>
+            <button id="dev-test-input" class="btn" type="button">Test mic</button>
+          </div>
+          <div id="dev-meter" class="device-meter" hidden>
+            <div class="level-bar"><span id="dev-level"></span></div>
+            <span id="dev-heard" class="muted small">Say something…</span>
+          </div>
+        </div>
+        <div class="device-row" id="dev-output-row">
+          <label for="dev-output">
+            <span class="device-name">Output</span>
+            <span class="muted small">Speakers or headphones for reference notes.</span>
+          </label>
+          <div class="device-control">
+            <select id="dev-output" class="select"></select>
+            <button id="dev-test-output" class="btn" type="button">Play test</button>
+          </div>
+        </div>
+        <p id="dev-output-unsupported" class="muted small" hidden>This browser can't choose an output. Pick one in your system's sound settings instead.</p>
+        <p id="dev-status" class="device-status" role="status"></p>
+
+        <h2 class="section-title">Practice</h2>
         <div class="setting">
           <div>
             <h3>Voice range</h3>
@@ -299,6 +334,7 @@
   <script src="curriculum.js"></script>
   <script src="progress.js"></script>
   <script src="pitch.js"></script>
+  <script src="devices.js"></script>
   <script src="pitch-trainer.js"></script>
   <script src="audio.js"></script>
   <script src="pitch-tab.js"></script>
