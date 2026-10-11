@@ -266,7 +266,7 @@
     buf: null,
     interval: null,
     echoCancellation: null, // of the open stream
-    recent: [], // last few detections, for a steadier reading
+    tracker: null, // Pitch.createTracker(): per-stream pitch tracking state
     listeners: new Set(),
     queue: Promise.resolve(),
     generation: 0, // bumped by close(), so an open in flight knows to give up
@@ -364,10 +364,11 @@
       }
       this.source = ctx.createMediaStreamSource(stream);
       this.analyser = ctx.createAnalyser();
-      this.analyser.fftSize = 2048;
+      // ~85 ms window: room for several periods of the lowest notes.
+      this.analyser.fftSize = window.Pitch.frameSizeFor(ctx.sampleRate);
       this.buf = new Float32Array(this.analyser.fftSize);
       this.source.connect(this.analyser);
-      this.recent = [];
+      this.tracker = window.Pitch.createTracker(); // fresh noise floor per stream
       this.emit({ type: "opened", fellBack });
       return true;
     },
@@ -419,14 +420,12 @@
         return;
       }
       this.analyser.getFloatTimeDomainData(this.buf);
-      const r = Pt.detectPitch(this.buf, ctx.sampleRate);
-      const smoothed = Pt.smooth3(this.recent, r ? r.freq : null);
-      this.recent = smoothed.recent;
+      const freq = this.tracker.push(this.buf, ctx.sampleRate);
       const frame = {
         t: ctx.currentTime,
-        freq: smoothed.value,
-        rawFreq: r ? r.freq : null,
-        clarity: r ? r.clarity : 0,
+        freq,
+        rawFreq: freq,
+        clarity: this.tracker.last.clarity,
         rms: Pt.rms(this.buf),
       };
       this.send(frame);
@@ -459,7 +458,7 @@
       this.stream = this.source = this.analyser = this.buf = null;
       this.echoCancellation = null;
       this.openDeviceId = null;
-      this.recent = [];
+      this.tracker = null;
     },
 
     close() {

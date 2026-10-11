@@ -132,7 +132,7 @@ something with HTTPS (for example GitHub Pages).
 | `curriculum.js` | All exercises and stages (edit this to change the content) |
 | `progress.js` | Unlocking, safety gating, session building (pure functions) |
 | `app.js` | App shell, guided sessions, timer and check-ins |
-| `pitch.js` | Pitch detection (McLeod method) and note/target maths (pure functions) |
+| `pitch.js` | Pitch detection (YIN with pYIN-style candidates and a tracker that holds low, quiet and breathy notes steady while fry, breath and mains hum read as no pitch) and note/target maths |
 | `pitch-trainer.js` | Pitch tab logic: home note, stages, trial scoring, adaptation, stats (pure functions) |
 | `pitch-tab.js` | Pitch tab screens and the scrolling pitch lane |
 | `audio.js` | Reference tones (incl. a voice-like "oo"), microphone frames, voice recording, device switching |

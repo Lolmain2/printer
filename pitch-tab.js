@@ -1277,7 +1277,8 @@
 
     function makeClip(buf, midi) {
       const data = buf.getChannelData(0);
-      const c = Pt.pickClip(data, buf.sampleRate, midi);
+      // Same window as live input, so clips of low notes are found too.
+      const c = Pt.pickClip(data, buf.sampleRate, midi, { frame: Pt.frameSizeFor(buf.sampleRate) });
       if (!c) return null;
       const gain = Pt.clipGain(data, c.start, c.end);
       const out = Tones.ctx.createBuffer(1, c.end - c.start, buf.sampleRate);
