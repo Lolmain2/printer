@@ -98,6 +98,16 @@ something with HTTPS (for example GitHub Pages).
   7-day accuracy, a day streak, a 14-day chart, and which notes you tend to
   sing flat or sharp. It's based on the pitch-training research in
   [RESEARCH.md](RESEARCH.md#7-learning-to-hit-notes-the-pitch-tab).
+- **Audio devices (Settings):**
+  - **Choosing devices:** pick the microphone and the output (speakers or
+    headphones). There's a mic test with a level meter and the note it hears,
+    and a test tone for the output.
+  - **When a device is missing:** if your chosen device isn't plugged in, the
+    app uses the system default and says so. It switches back automatically
+    when the device returns, including mid-session.
+  - **Errors:** a mic another app is holding (a DAW, Discord) or one blocked
+    by Windows privacy settings gets a specific message.
+  - **Pitch tab:** shows which devices are in use.
 - **Keyboard (desktop):** Space starts or pauses, ← and → move between
   exercises, and Esc quits the session. In Pitch practice, Space replays the
   note, S skips, P pauses auto-advance, and Esc exits.
@@ -114,7 +124,8 @@ something with HTTPS (for example GitHub Pages).
 | `pitch.js` | Pitch detection (McLeod method) and note/target maths (pure functions) |
 | `pitch-trainer.js` | Pitch tab logic: home note, stages, trial scoring, adaptation, stats (pure functions) |
 | `pitch-tab.js` | Pitch tab screens and the scrolling pitch lane |
-| `audio.js` | Reference tones (incl. a voice-like "oo"), microphone frames, voice recording |
+| `audio.js` | Reference tones (incl. a voice-like "oo"), microphone frames, voice recording, device switching |
+| `devices.js` | Mic/output device lists and matching a saved choice to what's plugged in (pure functions) |
 | `desktop/main.js` | Electron shell for the desktop app (window, mic-only permission) |
 | `desktop/icon.png` | App icon |
 | `tests/` | Unit tests: `npm test` |

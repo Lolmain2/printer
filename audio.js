@@ -17,7 +17,7 @@
     nodes: [],
     targets: [], // what the singer should be on, for the pitch check
     muted: false, // reference tones can be silenced while targets keep running
-    sinkId: "", // chosen output device; "" = system default
+    outputId: "", // the output the user chose; "" = system default
     onOutputLost: null, // called when the chosen output can't be used
 
     ensureCtx() {
@@ -25,7 +25,7 @@
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return null;
         this.ctx = new AC();
-        if (this.sinkId) this.setOutput(this.sinkId);
+        if (this.outputId) this.applyOutput();
       }
       if (this.ctx.state === "suspended") this.ctx.resume();
       return this.ctx;
@@ -36,24 +36,42 @@
       return Boolean(AC && typeof AC.prototype.setSinkId === "function");
     },
 
-    // Send all app sound to an output device ("" = system default). Resolves
-    // true on success; on failure it goes back to the default.
+    // Send all app sound to an output device ("" = system default).
     async setOutput(id) {
-      this.sinkId = id || "";
-      if (!this.ctx || !this.canChooseOutput()) return !this.sinkId || this.canChooseOutput();
+      this.outputId = id || "";
+      return this.applyOutput();
+    },
+
+    // Try the chosen output. If it can't be used (unplugged, or the browser
+    // needs mic permission first), play on the default but keep the choice so
+    // it can be applied again later. Resolves true when the choice is in use.
+    async applyOutput() {
+      const id = this.outputId;
+      if (!this.ctx || !this.canChooseOutput()) return !id || this.canChooseOutput();
       try {
-        await this.ctx.setSinkId(this.sinkId);
+        if (this.ctx.sinkId !== id) await this.ctx.setSinkId(id);
         return true;
       } catch (e) {
-        this.sinkId = "";
-        try {
-          await this.ctx.setSinkId("");
-        } catch (e2) {
-          /* already on the default */
-        }
+        if (this.outputId !== id) return false; // a newer choice took over
+        await this.useDefaultOutput();
         if (this.onOutputLost) this.onOutputLost(e);
         return false;
       }
+    },
+
+    // Play on the system default for now, without forgetting the choice.
+    async useDefaultOutput() {
+      if (!this.ctx || !this.canChooseOutput() || this.ctx.sinkId === "") return;
+      try {
+        await this.ctx.setSinkId("");
+      } catch (e) {
+        /* already on the default */
+      }
+    },
+
+    // Whether sound is going to the chosen output right now.
+    outputInUse() {
+      return !this.outputId || !this.ctx || !this.canChooseOutput() || this.ctx.sinkId === this.outputId;
     },
 
     // One note (or siren, with endFreq) with a short attack/release so it
@@ -253,8 +271,14 @@
     queue: Promise.resolve(),
     generation: 0, // bumped by close(), so an open in flight knows to give up
     deviceId: "", // chosen microphone; "" = system default
-    openDeviceId: null, // the choice the open stream was made for
+    openDeviceId: null, // device the open stream is on ("" = default, also after a fallback)
     fellBack: false, // the chosen mic wasn't available, so the default is in use
+    lastEchoCancellation: true, // to reopen with the same settings after a dropout
+    pending: 0, // opens queued or in progress
+    // Optional async (id) => replacement id, used when the chosen id can't be
+    // opened (ids can change; the app re-matches the device by name).
+    resolveDevice: null,
+    onEvent: null, // ({type: "opened", fellBack} | {type: "lost", error}) => void
 
     supported() {
       return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -265,7 +289,12 @@
     // open, false when a close() cancelled this open while it was waiting.
     open(opts = {}) {
       const generation = this.generation;
+      this.pending++;
       const p = this.queue.then(() => this.connect(opts, generation));
+      const done = () => {
+        this.pending--;
+      };
+      p.then(done, done);
       this.queue = p.catch(() => {});
       return p;
     },
@@ -279,19 +308,38 @@
       // Echo cancellation helps keep the reference tone out of the mic;
       // noise suppression and auto gain mangle sung notes, so they're off.
       const base = { echoCancellation, noiseSuppression: false, autoGainControl: false };
-      const wanted = this.deviceId;
+      let wanted = this.deviceId;
       let stream;
       let fellBack = false;
+      const gum = (id) => navigator.mediaDevices.getUserMedia({ audio: id ? { ...base, deviceId: { exact: id } } : base });
+      const gone = (e) => e && (e.name === "OverconstrainedError" || e.name === "NotFoundError");
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: wanted ? { ...base, deviceId: { exact: wanted } } : base,
-        });
+        stream = await gum(wanted);
       } catch (e) {
-        // The chosen mic is unplugged or renamed: use the default instead.
-        if (!wanted || !e || (e.name !== "OverconstrainedError" && e.name !== "NotFoundError")) throw e;
+        if (!wanted || !gone(e)) throw e;
         if (generation !== this.generation) return false;
-        stream = await navigator.mediaDevices.getUserMedia({ audio: base });
-        fellBack = true;
+        // The id may have changed (new USB port, cleared site data): let the
+        // app look the device up by name before giving up on it.
+        const other = this.resolveDevice ? await this.resolveDevice(wanted).catch(() => null) : null;
+        if (generation !== this.generation) return false;
+        if (other && other !== wanted) {
+          this.deviceId = wanted = other;
+          try {
+            stream = await gum(other);
+          } catch (e2) {
+            if (!gone(e2)) throw e2;
+          }
+        }
+        if (!stream) {
+          // Really not connected: use the default for now.
+          stream = await gum("");
+          fellBack = true;
+        }
+      }
+      if (generation === this.generation && this.deviceId !== wanted) {
+        // The choice changed while this open was waiting: open that one instead.
+        stream.getTracks().forEach((t) => t.stop());
+        return this.connect({ echoCancellation }, generation);
       }
       if (generation !== this.generation) {
         // close() ran while the permission prompt was up.
@@ -300,15 +348,18 @@
       }
       this.stream = stream;
       this.echoCancellation = echoCancellation;
-      this.openDeviceId = wanted;
+      this.lastEchoCancellation = echoCancellation;
+      this.openDeviceId = fellBack ? "" : wanted;
       this.fellBack = fellBack;
-      // Unplugged mid-use: reopen (falling back to the default), keeping listeners.
+      // Unplugged mid-use: reopen (falling back to the default), keeping
+      // listeners. If no mic can be opened, say so; frames keep coming
+      // (silent) so nothing waiting on them hangs.
       const track = stream.getAudioTracks()[0];
       if (track) {
         track.addEventListener("ended", () => {
           if (this.stream !== stream) return;
           this.release();
-          this.open({ echoCancellation }).catch(() => {});
+          this.open({ echoCancellation }).catch((error) => this.emit({ type: "lost", error }));
         });
       }
       this.source = ctx.createMediaStreamSource(stream);
@@ -317,7 +368,30 @@
       this.buf = new Float32Array(this.analyser.fftSize);
       this.source.connect(this.analyser);
       this.recent = [];
+      this.emit({ type: "opened", fellBack });
       return true;
+    },
+
+    emit(evt) {
+      if (!this.onEvent) return;
+      try {
+        this.onEvent(evt);
+      } catch (e) {
+        console.error(e);
+      }
+    },
+
+    // True while something is listening but the mic isn't on the chosen
+    // device (fallen back, or lost); used to recover when devices change.
+    needsReopen() {
+      return this.pending === 0 && this.listeners.size > 0 && (!this.stream || this.fellBack);
+    },
+
+    reopen() {
+      return this.open({ echoCancellation: this.lastEchoCancellation }).catch((error) => {
+        this.emit({ type: "lost", error });
+        return false;
+      });
     },
 
     // Adding the same fn twice is a no-op, so it can't be fed (and score)
@@ -337,9 +411,13 @@
     },
 
     tick() {
-      if (!this.analyser) return;
       const Pt = window.Pitch;
       const ctx = Tones.ctx;
+      if (!this.analyser) {
+        // Mic lost or reopening: send silence so trials and timeouts go on.
+        if (ctx) this.send({ t: ctx.currentTime, freq: null, rawFreq: null, clarity: 0, rms: 0 });
+        return;
+      }
       this.analyser.getFloatTimeDomainData(this.buf);
       const r = Pt.detectPitch(this.buf, ctx.sampleRate);
       const smoothed = Pt.smooth3(this.recent, r ? r.freq : null);
@@ -351,6 +429,10 @@
         clarity: r ? r.clarity : 0,
         rms: Pt.rms(this.buf),
       };
+      this.send(frame);
+    },
+
+    send(frame) {
       // Copy first: a listener may unsubscribe itself or others, or close().
       for (const fn of [...this.listeners]) {
         if (!this.listeners.has(fn)) continue;
@@ -362,15 +444,15 @@
       }
     },
 
-    // Drop the stream and audio nodes but keep listeners and the interval.
-    // Switch microphones. An open mic reopens on the new one, keeping its
-    // listeners; resolves like open().
+    // Switch microphones. An open (or wanted) mic reopens on the new one,
+    // keeping its listeners; resolves like open().
     async setDevice(id) {
       this.deviceId = id || "";
-      if (!this.stream) return true;
-      return this.open({ echoCancellation: this.echoCancellation });
+      if (!this.stream && !this.listeners.size) return true;
+      return this.open({ echoCancellation: this.stream ? this.echoCancellation : this.lastEchoCancellation });
     },
 
+    // Drop the stream and audio nodes but keep listeners and the interval.
     release() {
       if (this.source) this.source.disconnect();
       if (this.stream) this.stream.getTracks().forEach((t) => t.stop());

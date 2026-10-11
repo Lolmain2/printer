@@ -357,7 +357,8 @@
   // ---- Controller -------------------------------------------------------
 
   function create(deps) {
-    const { $, el, icon, show, goView, getState, setPitch, setRange, renderAdvice, safetyAdvice, deviceSummary, RANGES } = deps;
+    const { $, el, icon, show, goView, getState, setPitch, setRange, renderAdvice, safetyAdvice, deviceSummary, micErrorText, RANGES } =
+      deps;
     const { Tones, Mic, Recorder } = window.Sound;
     const PT = window.PitchTrainer;
     const Pt = window.Pitch;
@@ -477,14 +478,11 @@
       } catch (e) {
         if (id !== runId) return STALE;
         Mic.close();
-        return e && e.name === "NotAllowedError"
-          ? "Microphone access was blocked. Allow it in your browser's or Windows' microphone settings."
-          : "Couldn't open the microphone.";
+        return micErrorText(e);
       }
       if (!opened || id !== runId) return STALE;
       Mic.subscribe(onFrame);
       lastFrameT = null;
-      if (Mic.fellBack) toast("Your chosen mic isn't connected, so the system default is listening.");
       return null;
     }
 
@@ -1796,7 +1794,10 @@
       $("d-pause").textContent = set.autoNext ? "Pause auto-next" : "Resume auto-next";
     });
     $("ps-remeasure").addEventListener("click", () => begin("setup"));
-    $("ph-devices-change").addEventListener("click", () => goView("settings"));
+    $("ph-devices-change").addEventListener("click", () => {
+      goView("settings");
+      $("dev-input").focus();
+    });
     for (const b of $("ph-timbre").querySelectorAll("button")) {
       b.addEventListener("click", () => {
         setPitch({ ...ps(), settings: { ...ps().settings, timbre: b.dataset.timbre } });
@@ -1810,7 +1811,12 @@
       how.appendChild(row);
     }
 
-    return { render, leave, pause, onKey };
+    // A message from outside (e.g. the mic fell back or was lost).
+    function notice(text) {
+      toast(text);
+    }
+
+    return { render, leave, pause, onKey, notice };
   }
 
   const UNCLEAR_TEXT = "I hear sound but no clear note. Use a clean 'oo' or a hum; fry and grit don't show pitch.";

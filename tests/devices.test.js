@@ -70,3 +70,13 @@ test("choiceLabel", () => {
   assert.equal(D.choiceLabel({ id: "mic-b", label: "USB Mic" }), "USB Mic");
   assert.equal(D.choiceLabel({ id: "mic-b", label: "" }), "Selected device");
 });
+
+test("micErrorMessage explains each failure", () => {
+  const e = (name) => ({ name });
+  assert.match(D.micErrorMessage(e("NotAllowedError")), /blocked/);
+  assert.match(D.micErrorMessage(e("NotReadableError"), "USB Mic"), /^USB Mic is busy or blocked/);
+  assert.match(D.micErrorMessage(e("NotReadableError"), "System default"), /^The microphone is busy/);
+  assert.match(D.micErrorMessage(e("NotFoundError")), /No microphone is connected/);
+  assert.equal(D.micErrorMessage(e("Weird")), "Couldn't open the microphone.");
+  assert.equal(D.micErrorMessage(null), "Couldn't open the microphone.");
+});

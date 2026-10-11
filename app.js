@@ -35,7 +35,7 @@
   // Reference tones and microphone capture live in audio.js.
   const { Tones, Mic } = window.Sound;
   Mic.deviceId = state.audio.input.id;
-  Tones.sinkId = state.audio.output.id;
+  Tones.outputId = state.audio.output.id;
 
   const STATUS_TEXT = {
     on: "On the note ✓",
@@ -133,10 +133,6 @@
       const opened = await Mic.open();
       if (!opened || !session || !state.mic) return;
       Mic.subscribe(pitchTick);
-      if (Mic.fellBack) {
-        $("mic-error").hidden = false;
-        $("mic-error").textContent = `${window.Devices.choiceLabel(state.audio.input)} isn't connected, so the system default mic is listening.`;
-      }
     } catch (e) {
       if (!session) return; // ended while waiting; the mic may belong to someone else now
       Mic.close();
@@ -145,10 +141,7 @@
       $("mic-toggle").checked = false;
       $("pitch-panel").hidden = true;
       $("mic-error").hidden = false;
-      $("mic-error").textContent =
-        e && e.name === "NotAllowedError"
-          ? "Microphone access was blocked. Allow it in your browser's site settings to use the pitch check."
-          : "Couldn't open the microphone.";
+      $("mic-error").textContent = micErrorText(e);
     }
   }
 
@@ -334,8 +327,12 @@
   // ---- Audio devices -----------------------------------------------------
 
   const Dev = window.Devices;
-  let micTest = null;
+  let micTest = null; // listener while the Settings mic test runs
+  let micTestPending = false; // the test's open is waiting (permission prompt, slow device)
   let devOptions = { ins: [], outs: [] };
+  const devMissing = { input: false, output: false };
+  let devAction = ""; // result of the last test/switch
+  let devNotes = ""; // what reconcileDevices found (cleared when resolved)
 
   async function listDevices() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
@@ -346,39 +343,72 @@
     }
   }
 
-  function setDevStatus(text) {
-    $("dev-status").textContent = text || "";
+  function renderDevStatus() {
+    $("dev-status").textContent = [devAction, devNotes].filter(Boolean).join(" ");
   }
+
+  function setDevStatus(text) {
+    devAction = text || "";
+    renderDevStatus();
+  }
+
+  const fallbackText = () => `${Dev.choiceLabel(state.audio.input)} isn't connected, so the system default mic is listening.`;
+  // In Settings the "isn't connected" note from reconcileDevices already says
+  // it when the device is known to be missing.
+  const fallbackStatus = () => (Mic.stream && Mic.fellBack && !devMissing.input ? fallbackText() : "");
+  const micErrorText = (e) => Dev.micErrorMessage(e, Dev.choiceLabel(state.audio.input));
 
   // Match the saved choices to what's plugged in now. A missing device stays
   // saved (it's used again when it's back); meanwhile the default plays/listens.
-  function reconcileDevices(ins, outs) {
+  // `fromMic`: called by Mic itself mid-open, so don't ask it to (re)open.
+  function reconcileDevices(ins, outs, { fromMic = false } = {}) {
     const notes = [];
     const labelOf = (list, id) => {
       const o = list.find((x) => x.id === id);
       return o && o.named ? o.label : "";
     };
     const i = Dev.resolveChoice(ins, state.audio.input);
+    devMissing.input = i.missing;
     if (i.missing) {
       notes.push(`${Dev.choiceLabel(state.audio.input)} isn't connected. The system default mic is used until it's back.`);
     } else if (i.id !== state.audio.input.id) {
       state.audio.input = { id: i.id, label: labelOf(ins, i.id) };
       saveState();
-      Mic.setDevice(i.id).catch(() => {});
+      if (!fromMic) Mic.setDevice(i.id).catch(() => {});
+    } else if (!fromMic && Mic.needsReopen()) {
+      Mic.reopen(); // the chosen mic is back (or a mic appeared after a loss)
     }
     const o = Dev.resolveChoice(outs, state.audio.output);
+    devMissing.output = o.missing;
     if (o.missing) {
       notes.push(`${Dev.choiceLabel(state.audio.output)} isn't connected. Sound plays on the system default until it's back.`);
-      if (Tones.sinkId) Tones.setOutput("");
+      Tones.useDefaultOutput();
     } else {
       if (o.id !== state.audio.output.id) {
         state.audio.output = { id: o.id, label: labelOf(outs, o.id) };
         saveState();
       }
-      if (Tones.sinkId !== o.id) Tones.setOutput(o.id);
+      Tones.outputId = o.id;
+      Tones.applyOutput();
     }
     return notes;
   }
+
+  async function refreshDevices(opts) {
+    const devices = await listDevices();
+    const ins = Dev.deviceOptions(devices, "audioinput");
+    const outs = Dev.deviceOptions(devices, "audiooutput");
+    devOptions = { ins, outs };
+    devNotes = reconcileDevices(ins, outs, opts).join(" ");
+    return devices;
+  }
+
+  // Ids can change (new USB port, cleared site data): find the saved mic by
+  // name. Used by Mic when the saved id can't be opened.
+  Mic.resolveDevice = async () => {
+    await refreshDevices({ fromMic: true });
+    return state.audio.input.id || null;
+  };
 
   function fillSelect(sel, options, current, defName) {
     sel.innerHTML = "";
@@ -390,9 +420,11 @@
       op.value = o.id;
       sel.appendChild(op);
     }
-    // A saved device that isn't listed right now still shows as chosen.
+    // A saved device that isn't listed right now still shows as chosen. Only
+    // call it "not connected" when the browser shows real device names.
     if (current.id && !options.some((o) => o.id === current.id)) {
-      const op = el("option", null, `${Dev.choiceLabel(current)} (not connected)`);
+      const known = options.some((o) => o.named);
+      const op = el("option", null, `${Dev.choiceLabel(current)}${known ? " (not connected)" : ""}`);
       op.value = current.id;
       sel.appendChild(op);
     }
@@ -400,11 +432,9 @@
   }
 
   async function renderDevices() {
-    const devices = await listDevices();
-    const ins = Dev.deviceOptions(devices, "audioinput");
-    const outs = Dev.deviceOptions(devices, "audiooutput");
-    devOptions = { ins, outs };
-    const notes = reconcileDevices(ins, outs);
+    const devices = await refreshDevices();
+    if (view !== "settings") return;
+    const { ins, outs } = devOptions;
     fillSelect($("dev-input"), ins, state.audio.input, Dev.defaultName(devices, "audioinput"));
     const canOut = Tones.canChooseOutput();
     $("dev-output-row").hidden = !canOut;
@@ -421,32 +451,35 @@
       note.append("Device names show up once the app is allowed to use the microphone. ");
       const show = el("button", "link-btn", "Allow and show names");
       show.type = "button";
-      show.addEventListener("click", () => startMicTest());
+      show.addEventListener("click", async () => {
+        await startMicTest();
+        $("dev-input").focus(); // the button is gone once names show
+      });
       note.appendChild(show);
     }
     note.hidden = !note.textContent;
-    if (notes.length) setDevStatus(notes.join(" "));
+    renderDevStatus();
   }
 
   async function startMicTest() {
-    if (micTest) return;
+    if (micTest || micTestPending) return;
     Tones.ensureCtx();
+    micTestPending = true;
+    $("dev-test-input").textContent = "Opening…";
     let opened;
     try {
       opened = await Mic.open();
     } catch (e) {
-      setDevStatus(
-        e && e.name === "NotAllowedError"
-          ? "Microphone access was blocked. Allow it in your browser's or Windows' microphone settings."
-          : "Couldn't open the microphone.",
-      );
+      if (micTestPending) {
+        micTestPending = false;
+        $("dev-test-input").textContent = "Test mic";
+        setDevStatus(micErrorText(e));
+      }
       return;
     }
-    if (!opened) return;
-    if (view !== "settings") {
-      Mic.close();
-      return;
-    }
+    // Left Settings (or stopped) while it opened: stopMicTest already closed it.
+    if (!micTestPending || !opened) return;
+    micTestPending = false;
     micTest = (f) => {
       $("dev-level").style.width = `${Math.round(100 * Math.min(1, f.rms / 0.1))}%`;
       $("dev-heard").textContent = f.freq ? `Hearing ${window.Pitch.noteName(window.Pitch.freqToMidi(f.freq))}` : "Say or hum something…";
@@ -454,15 +487,18 @@
     Mic.subscribe(micTest);
     $("dev-meter").hidden = false;
     $("dev-test-input").textContent = "Stop test";
-    setDevStatus(Mic.fellBack ? `${Dev.choiceLabel(state.audio.input)} isn't connected, so the system default mic is listening.` : "");
-    renderDevices(); // names are visible now that the mic is allowed
+    setDevStatus(fallbackStatus());
+    await renderDevices(); // names are visible now that the mic is allowed
   }
 
   function stopMicTest() {
-    if (!micTest) return;
+    if (!micTest && !micTestPending) return;
     micTest = null;
-    Mic.close();
+    micTestPending = false;
+    Mic.close(); // also cancels an open still waiting
     $("dev-meter").hidden = true;
+    $("dev-level").style.width = "0%";
+    $("dev-heard").textContent = "Say or hum something…";
     $("dev-test-input").textContent = "Test mic";
   }
 
@@ -471,10 +507,49 @@
     return o && o.named ? o.label : "";
   }
 
-  // Shown on the Pitch tab.
+  // Shown on the Pitch tab; says when the default is standing in.
   function deviceSummary() {
-    return `Mic: ${Dev.choiceLabel(state.audio.input)} · Output: ${Dev.choiceLabel(state.audio.output)}`;
+    const standIn = " (not connected, using system default)";
+    const micAway = state.audio.input.id && (devMissing.input || (Mic.stream && Mic.fellBack));
+    const outAway = state.audio.output.id && (devMissing.output || !Tones.outputInUse());
+    const mic = `Mic: ${Dev.choiceLabel(state.audio.input)}${micAway ? standIn : ""}`;
+    return `${mic} · Output: ${Dev.choiceLabel(state.audio.output)}${outAway ? standIn : ""}`;
   }
+
+  // The mic reports opens (possibly on the default) and losses; tell the user
+  // wherever they are.
+  function showSessionMicNote(text) {
+    $("mic-error").hidden = !text;
+    $("mic-error").textContent = text || "";
+  }
+
+  let micWasAway = false; // fell back or lost, so a later good open is news
+
+  Mic.onEvent = (evt) => {
+    if (evt.type === "opened") {
+      // Mic permission is granted now, so the chosen output can be applied too.
+      if (!Tones.outputInUse() && !devMissing.output) Tones.applyOutput();
+      const text = evt.fellBack ? fallbackText() : "";
+      const back = !evt.fellBack && micWasAway;
+      micWasAway = evt.fellBack;
+      if (view === "session" && session && state.mic) showSessionMicNote(text);
+      if (view === "drill" && text) pitchTab.notice(text);
+      if (view === "drill" && back) pitchTab.notice(`Listening on ${Dev.choiceLabel(state.audio.input)} again.`);
+      if (view === "settings" && (micTest || micTestPending)) setDevStatus(fallbackStatus());
+    } else if (evt.type === "lost") {
+      micWasAway = true;
+      const gone = evt.error && (evt.error.name === "NotFoundError" || evt.error.name === "OverconstrainedError");
+      const text = gone
+        ? "Your microphone was disconnected. Plug it back in, or choose another in Settings > Audio devices."
+        : micErrorText(evt.error);
+      if (view === "session" && session && state.mic) showSessionMicNote(text);
+      if (view === "drill") pitchTab.notice(text);
+      if (view === "settings") {
+        stopMicTest();
+        setDevStatus(text);
+      }
+    }
+  };
 
   function goView(v) {
     if ((view === "pitch" || view === "drill") && v !== view) pitchTab.leave();
@@ -669,6 +744,7 @@
     renderAdvice,
     safetyAdvice: () => P.safetyAdvice(state),
     deviceSummary,
+    micErrorText: (e) => micErrorText(e),
     RANGES,
   });
 
@@ -703,10 +779,12 @@
     try {
       await Mic.setDevice(id);
     } catch (err) {
-      setDevStatus("Couldn't open that microphone.");
+      stopMicTest();
+      setDevStatus(micErrorText(err));
       return;
     }
-    if (Mic.stream && Mic.fellBack) setDevStatus("That microphone isn't available, so the system default is listening.");
+    await renderDevices();
+    setDevStatus(fallbackStatus());
   });
   $("dev-output").addEventListener("change", async (e) => {
     const id = e.target.value;
@@ -715,12 +793,13 @@
     setDevStatus("");
     Tones.ensureCtx();
     const ok = await Tones.setOutput(id);
+    await renderDevices();
     if (!ok) setDevStatus("Couldn't switch to that output, so sound plays on the system default.");
     else playTestTone();
   });
   $("dev-test-output").addEventListener("click", async () => {
     Tones.ensureCtx();
-    await Tones.setOutput(Tones.sinkId);
+    await Tones.applyOutput();
     playTestTone();
   });
   function playTestTone() {
@@ -730,14 +809,13 @@
     if (view === "settings") setDevStatus("Couldn't use the chosen output, so sound plays on the system default.");
   };
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-    navigator.mediaDevices.addEventListener("devicechange", async () => {
+    navigator.mediaDevices.addEventListener("devicechange", () => {
       if (view === "settings") renderDevices();
-      else {
-        const devices = await listDevices();
-        reconcileDevices(Dev.deviceOptions(devices, "audioinput"), Dev.deviceOptions(devices, "audiooutput"));
-      }
+      else refreshDevices();
     });
   }
+  // Re-match saved devices at startup too (ids can change between runs).
+  refreshDevices();
   $("quit-btn").addEventListener("click", quitSession);
   $("reset-btn").addEventListener("click", () => {
     if (!confirm("Delete all progress, history and pitch training?")) return;

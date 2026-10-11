@@ -56,7 +56,23 @@
     return choice && choice.id ? choice.label || "Selected device" : "System default";
   }
 
-  const api = { deviceOptions, defaultName, resolveChoice, normalizeAudioSettings, choiceLabel };
+  // What to tell the user when a microphone can't be opened (or was lost).
+  function micErrorMessage(err, label) {
+    const name = err && err.name;
+    const mic = label && label !== "System default" ? label : "The microphone";
+    if (name === "NotAllowedError" || name === "SecurityError") {
+      return "Microphone access was blocked. Allow it in your browser's or Windows' microphone settings (Privacy & security > Microphone).";
+    }
+    if (name === "NotReadableError" || name === "AbortError") {
+      return `${mic} is busy or blocked. Close other apps that may be using it (a DAW, Discord, OBS), or choose another mic in Settings > Audio devices.`;
+    }
+    if (name === "NotFoundError" || name === "OverconstrainedError") {
+      return "No microphone is connected. Plug one in, or choose another in Settings > Audio devices.";
+    }
+    return "Couldn't open the microphone.";
+  }
+
+  const api = { deviceOptions, defaultName, resolveChoice, normalizeAudioSettings, choiceLabel, micErrorMessage };
   root.Devices = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
