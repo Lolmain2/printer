@@ -27,9 +27,26 @@
       blind: false,
       frozenAt: null,
       nearest: false,
+      follow: false, // setup/Explore: scroll the view to keep the voice on screen
       farSince: null,
       points: [],
     };
+
+    // Lowest/highest notes the lane will ever show (E1 to C6).
+    const LANE_MIN = 28;
+    const LANE_MAX = 84;
+
+    // Keep the voice in view: when the head leaves the view, re-centre on it
+    // (same span), so low or high notes don't disappear off the edge.
+    function followHead(head) {
+      if (!s.follow || !head) return;
+      const m = head.midi;
+      if (m >= s.view.lo + 0.5 && m <= s.view.hi - 0.5) return;
+      const span = s.view.hi - s.view.lo;
+      let lo = Math.round(m) - Math.floor(span / 2);
+      lo = Math.max(LANE_MIN, Math.min(LANE_MAX - span, lo));
+      s.view = { lo, hi: lo + span };
+    }
 
     function readColors() {
       const cs = getComputedStyle(document.documentElement);
@@ -119,6 +136,14 @@
       const visible = s.points.filter((p) => p.t >= now - G.history - 0.2 && p.t <= now + 0.05);
       const last = visible.length ? visible[visible.length - 1] : null;
       const head = last && last.midi != null && now - last.t < 0.2 ? last : null;
+      if (showTrace && s.follow) {
+        const before = s.view;
+        followHead(head);
+        if (s.view !== before) {
+          grid = null;
+          return draw(); // redraw with the new view
+        }
+      }
 
       // Soft highlight on the row you're nearest to (Explore).
       if (s.nearest && head && showTrace) {
@@ -332,6 +357,9 @@
       },
       setNearest(on) {
         s.nearest = on;
+      },
+      setFollow(on) {
+        s.follow = on;
       },
       freeze(t) {
         s.frozenAt = t;
@@ -606,6 +634,7 @@
       lane.setTarget(null);
       lane.setBlind(false);
       lane.setNearest(false);
+      lane.setFollow(false);
       lane.setPulse(false);
       lane.clear();
       if (!document.hidden) lane.start();
@@ -614,9 +643,9 @@
     function viewAround(center, below, above) {
       let lo = Math.round(center) - below;
       let hi = Math.round(center) + above;
-      if (lo < 36) {
-        hi += 36 - lo;
-        lo = 36;
+      if (lo < 28) {
+        hi += 28 - lo;
+        lo = 28;
       }
       if (hi > 84) {
         lo -= hi - 84;
@@ -731,6 +760,7 @@
       exploreState = null;
       const center = baseCenter();
       lane.setView(viewAround(center, 7, 7));
+      lane.setFollow(true);
       lane.setTarget(null);
       lane.clear();
       feedTrace = true;
@@ -892,6 +922,7 @@
       mode = "explore";
       const c = homeMidi() != null ? homeMidi() : baseCenter();
       lane.setView(viewAround(c, 7, 12));
+      lane.setFollow(true);
       lane.setTarget(null);
       lane.setNearest(true);
       lane.clear();
@@ -1005,6 +1036,7 @@
       $("d-summary").hidden = true;
       $("d-body").hidden = false;
       lane.setNearest(false);
+      lane.setFollow(false); // training keeps a fixed view around the targets
       const home = homeMidi();
       if (set.stageId === 1) {
         lane.setView(viewAround(home, 7, 7));
