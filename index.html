@@ -37,6 +37,13 @@
     </nav>
 
     <main class="main">
+      <div id="update-banner" class="update-banner" role="status" hidden>
+        <span id="update-banner-text"></span>
+        <span class="update-banner-actions">
+          <button id="update-restart" class="btn btn-primary btn-small" type="button">Restart now</button>
+          <button id="update-later" class="btn btn-small btn-quiet" type="button">Later</button>
+        </span>
+      </div>
       <!-- Practice -->
       <section id="view-practice" class="view">
         <div id="advice"></div>
@@ -246,6 +253,13 @@
           </div>
           <label class="switch"><input id="mic-default" type="checkbox"><span></span></label>
         </div>
+        <div id="update-row" class="setting" hidden>
+          <div>
+            <h3>App updates</h3>
+            <p id="update-line" class="muted"></p>
+          </div>
+          <button id="update-btn" class="btn" type="button">Check now</button>
+        </div>
         <div class="setting">
           <div>
             <h3>Reset progress</h3>
@@ -335,6 +349,7 @@
   <script src="progress.js"></script>
   <script src="pitch.js"></script>
   <script src="devices.js"></script>
+  <script src="updates.js"></script>
   <script src="pitch-trainer.js"></script>
   <script src="audio.js"></script>
   <script src="pitch-tab.js"></script>

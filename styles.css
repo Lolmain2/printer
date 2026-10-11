@@ -463,6 +463,16 @@ button:focus-visible, .switch input:focus-visible + span { outline: 2px solid va
   background: var(--surface-2); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
+/* ---- App updates ----------------------------------------------------- */
+
+.update-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  max-width: 760px; margin: 0 auto 18px; padding: 10px 14px;
+  border-radius: 12px; background: var(--ok-soft); border: 1px solid rgba(62, 207, 142, 0.35);
+}
+.update-banner-actions { display: flex; gap: 8px; }
+body.in-session .update-banner { display: none; }
+
 /* ---- Small screens --------------------------------------------------- */
 
 @media (max-width: 860px) {

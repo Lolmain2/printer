@@ -851,6 +851,50 @@
     if (focusMode && e.code === "Space" && !(e.target.closest && e.target.closest("input"))) e.preventDefault();
   });
 
+  // ---- App updates (desktop app only) ------------------------------------
+
+  // The installed app updates itself from GitHub Releases (desktop/updater.js).
+  // Nothing restarts on its own: the banner waits outside sessions and drills
+  // (it's hidden in focus mode), and an update also installs on the next close.
+  const desktop = window.desktop;
+  let updateStatus = null;
+  let updateBannerDismissed = false;
+
+  function renderUpdates() {
+    if (!desktop || !updateStatus) return;
+    const v = window.Updates.updateView(updateStatus);
+    $("update-row").hidden = false;
+    $("update-line").textContent = v.line;
+    const btn = $("update-btn");
+    btn.hidden = !v.action;
+    btn.textContent = { install: "Restart to update", download: "Get the installer", check: "Check now" }[v.action] || "";
+    btn.classList.toggle("btn-primary", v.action === "install");
+    $("update-banner").hidden = !v.banner || updateBannerDismissed;
+    $("update-banner-text").textContent = `Scream Coach ${updateStatus.version} is ready to install.`;
+  }
+
+  if (desktop) {
+    desktop.getUpdate().then((s) => {
+      updateStatus = s;
+      renderUpdates();
+    });
+    desktop.onUpdate((s) => {
+      updateStatus = s;
+      renderUpdates();
+    });
+    $("update-btn").addEventListener("click", () => {
+      const action = window.Updates.updateView(updateStatus).action;
+      if (action === "install") desktop.installUpdate();
+      else if (action === "download") desktop.openReleases();
+      else desktop.checkForUpdates();
+    });
+    $("update-restart").addEventListener("click", () => desktop.installUpdate());
+    $("update-later").addEventListener("click", () => {
+      updateBannerDismissed = true;
+      renderUpdates();
+    });
+  }
+
   // Hidden window: stop listening (and discard the current try) until resumed.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && (view === "drill" || view === "pitch")) pitchTab.pause();

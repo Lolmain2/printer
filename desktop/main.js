@@ -1,6 +1,7 @@
 // Electron shell: shows the web app (../index.html) in a desktop window.
 const { app, BrowserWindow, session, shell } = require("electron");
 const path = require("path");
+const { setupUpdates } = require("./updater");
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -23,6 +24,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   win.removeMenu();
@@ -52,6 +54,7 @@ app.whenReady().then(() => {
     (_wc, permission) => permission === "media" || permission === "speaker-selection",
   );
   createWindow();
+  setupUpdates(() => win);
 });
 
 app.on("second-instance", () => {

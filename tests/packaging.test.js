@@ -24,3 +24,18 @@ test("every file index.html loads is packaged into the exe", () => {
 test("packaged files exist", () => {
   for (const f of pkg.build.files) assert.ok(fs.existsSync(path.join(root, f)), `${f} listed in build.files but missing`);
 });
+
+test("every desktop file (main, preload, updater) is packaged", () => {
+  const files = new Set(pkg.build.files);
+  for (const f of fs.readdirSync(path.join(root, "desktop"))) {
+    assert.ok(files.has(`desktop/${f}`), `desktop/${f} is missing from package.json build.files`);
+  }
+});
+
+test("the updater can find releases: installer target with a GitHub publish config", () => {
+  assert.equal(pkg.build.win.target, "nsis");
+  const gh = pkg.build.publish.find((p) => p.provider === "github");
+  assert.ok(gh && gh.owner && gh.repo, "build.publish needs a github provider with owner and repo");
+  assert.equal(gh.releaseType, "release"); // drafts are invisible to the updater
+  assert.ok(pkg.dependencies && pkg.dependencies["electron-updater"], "electron-updater must be a runtime dependency");
+});

@@ -1,14 +1,14 @@
 {
   "name": "scream-coach",
   "productName": "Scream Coach",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Vocal warm-ups that build up to fry, false cord and other extreme vocal techniques.",
   "private": true,
   "main": "desktop/main.js",
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.js",
-    "dist": "electron-builder --win portable --x64 --publish never"
+    "dist": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "electron": "44.4.5",
@@ -27,20 +27,40 @@
       "curriculum.js",
       "progress.js",
       "pitch.js",
+      "updates.js",
       "devices.js",
       "pitch-trainer.js",
       "audio.js",
       "pitch-tab.js",
       "desktop/main.js",
+      "desktop/preload.js",
+      "desktop/updater.js",
       "desktop/icon.png",
       "package.json"
     ],
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "desktop/icon.png"
     },
-    "portable": {
-      "artifactName": "ScreamCoach.exe"
-    }
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "ScreamCoach-Setup-${version}.${ext}",
+      "shortcutName": "Scream Coach",
+      "createDesktopShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Lolmain2",
+        "repo": "printer",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }
